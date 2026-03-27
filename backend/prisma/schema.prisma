@@ -1,0 +1,142 @@
+// ─── Prisma Schema ─────────────────────────────────────────────────────────────
+// Learn more: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider   = "prisma-client-js"
+  engineType = "library"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── User ──────────────────────────────────────────────────────────────────────
+model User {
+  id              String            @id @default(uuid())
+  email           String            @unique
+  password        String
+  name            String?
+  isVerified      Boolean           @default(false)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  preferences     UserPreference[]
+  strategies      Strategy[]
+  alerts          Alert[]
+}
+
+// ─── Asset ─────────────────────────────────────────────────────────────────────
+model Asset {
+  id              String            @id @default(uuid())
+  name            String
+  symbol          String            @unique
+  type            AssetType
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  preferences     UserPreference[]
+  posts           Post[]
+}
+
+// ─── UserPreference ────────────────────────────────────────────────────────────
+model UserPreference {
+  id              String            @id @default(uuid())
+  userId          String
+  assetId         String
+  alertEnabled    Boolean           @default(true)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  asset           Asset             @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, assetId])
+}
+
+// ─── Post (ingested social post) ──────────────────────────────────────────────
+model Post {
+  id              String            @id @default(uuid())
+  assetId         String
+  source          PostSource
+  externalId      String            @unique
+  content         String
+  author          String?
+  url             String?
+  postedAt        DateTime
+  createdAt       DateTime          @default(now())
+
+  asset           Asset             @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  sentiment       SentimentResult?
+}
+
+// ─── SentimentResult ───────────────────────────────────────────────────────────
+model SentimentResult {
+  id              String            @id @default(uuid())
+  postId          String            @unique
+  sentimentScore  Float             // -1 to 1
+  impactScore     Float             // 0 to 100
+  confidence      Float             // 0 to 1
+  category        SentimentCategory
+  reason          String?
+  isWhaleAlert    Boolean           @default(false)
+  analyzedBy      AnalysisMethod    @default(NLP)
+  createdAt       DateTime          @default(now())
+
+  post            Post              @relation(fields: [postId], references: [id], onDelete: Cascade)
+}
+
+// ─── Strategy ──────────────────────────────────────────────────────────────────
+model Strategy {
+  id              String            @id @default(uuid())
+  userId          String
+  name            String
+  description     String?
+  // JSON config: { sentimentWeight, impactWeight, confidenceThreshold, etc. }
+  config          Json
+  isActive        Boolean           @default(true)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ─── Alert ─────────────────────────────────────────────────────────────────────
+model Alert {
+  id              String            @id @default(uuid())
+  userId          String
+  type            AlertType
+  message         String
+  metadata        Json?
+  sentAt          Boolean           @default(false)
+  createdAt       DateTime          @default(now())
+
+  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ─── Enums ─────────────────────────────────────────────────────────────────────
+enum AssetType {
+  STOCK
+  CRYPTO
+}
+
+enum PostSource {
+  TWITTER
+  REDDIT
+}
+
+enum SentimentCategory {
+  SOCIAL_BUZZ
+  NEWS
+  RUMOR
+  WHALE_ACTIVITY
+}
+
+enum AnalysisMethod {
+  NLP
+  LLM
+}
+
+enum AlertType {
+  EMAIL
+  IN_APP
+}
