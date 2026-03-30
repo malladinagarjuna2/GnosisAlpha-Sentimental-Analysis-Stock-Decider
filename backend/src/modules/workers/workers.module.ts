@@ -6,13 +6,17 @@ import { PostWorker } from './post.worker';
 import { SentimentWorker } from './sentiment.worker';
 import { SentimentModule } from '../sentiment/sentiment.module';
 import { WhaleModule } from '../whale/whale.module';
+import { StrategiesModule } from '../strategies/strategies.module';
+import { AlertsModule } from '../alerts/alerts.module';
 
 // QueueModule is @Global() — no need to import it here, @InjectQueue() works automatically
 
 @Module({
   imports: [
-    SentimentModule, // provides SentimentService for SentimentWorker
-    WhaleModule,     // provides WhaleService for PostWorker
+    SentimentModule,  // provides SentimentService for SentimentWorker
+    WhaleModule,      // provides WhaleService for PostWorker
+    StrategiesModule, // provides StrategiesService for per-user strategy evaluation
+    AlertsModule,     // provides AlertsService for alert creation
   ],
   providers: [PostWorker, SentimentWorker],
 })

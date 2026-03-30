@@ -51,13 +51,24 @@ export class PostWorker extends WorkerHost {
       this.logger.warn(`🐋 Whale detected [${post.id}]: ${whale.reason}`);
     }
 
-    // 3. Dispatch to sentimentQueue
+    // 3. Find users who track this asset (for per-user strategy evaluation)
+    const prefs = await this.prisma.userPreference.findMany({
+      where: { assetId },
+      select: { userId: true },
+    });
+    const trackedByUserIds = prefs.map(p => p.userId);
+
+    // 4. Dispatch to sentimentQueue
     const sentimentPayload: SentimentJobPayload = {
-      postId:          post.id,
+      postId:           post.id,
       assetId,
       content,
-      isWhaleAlert:    whale.isWhale,
-      confidenceBoost: whale.confidenceBoost,
+      isWhaleAlert:     whale.isWhale,
+      confidenceBoost:  whale.confidenceBoost,
+      authorFollowers,
+      retweetCount,
+      likeCount,
+      trackedByUserIds,
     };
 
     await this.sentimentQueue.add(ANALYZE_SENTIMENT_JOB, sentimentPayload, {
