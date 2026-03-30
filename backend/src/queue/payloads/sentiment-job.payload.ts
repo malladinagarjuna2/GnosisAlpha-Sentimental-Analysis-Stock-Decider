@@ -12,4 +12,10 @@ export interface SentimentJobPayload {
   isWhaleAlert: boolean;
   /** Confidence boost from whale detection (0–0.3) */
   confidenceBoost: number;
+  /** Engagement metrics — used for impact scoring */
+  authorFollowers: number;
+  retweetCount: number;
+  likeCount: number;
+  /** User IDs who track this asset — needed to fetch their strategies */
+  trackedByUserIds: string[];
 }
