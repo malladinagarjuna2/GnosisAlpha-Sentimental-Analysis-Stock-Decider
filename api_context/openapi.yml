@@ -1,0 +1,1351 @@
+openapi: 3.0.3
+
+info:
+  title: Market Sentiment Intelligence API
+  description: |
+    Near real-time sentiment analysis platform for traders and crypto users.
+
+    ## Quick Start
+    1. Call `POST /api/auth/signup` to create an account
+    2. Call `POST /api/auth/login` to get a JWT token
+    3. Use the token in `Authorization: Bearer <token>` header for all protected routes
+
+    ## Pre-filled Values
+    This spec contains temporary example values so you can test immediately in Postman without changing anything.
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:3001
+    description: Local development server
+
+tags:
+  - name: Auth
+    description: Signup, login, JWT tokens
+  - name: Users
+    description: Profile management
+  - name: Assets
+    description: Stock and crypto asset management
+  - name: Preferences
+    description: User asset preferences and alert settings
+  - name: Posts
+    description: Ingested social posts with sentiment
+  - name: Sentiment
+    description: NLP and LLM sentiment analysis
+  - name: Analysis
+    description: On-demand deep LLM analysis (GPT-4o-mini)
+  - name: Strategies
+    description: User-configurable scoring strategies
+  - name: Alerts
+    description: In-app and email alerts
+  - name: Channels
+    description: Social media channel management
+  - name: Whale
+    description: Whale activity detection
+  - name: Health
+    description: Service health check
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Get your token from POST /api/auth/login
+
+  schemas:
+    AssetType:
+      type: string
+      enum: [STOCK, CRYPTO]
+
+    PostSource:
+      type: string
+      enum: [TWITTER, REDDIT]
+
+    SocialPlatform:
+      type: string
+      enum: [TWITTER, REDDIT]
+
+    SentimentCategory:
+      type: string
+      enum: [SOCIAL_BUZZ, NEWS, RUMOR, WHALE_ACTIVITY]
+
+    AnalysisMethod:
+      type: string
+      enum: [NLP, LLM]
+
+    AlertType:
+      type: string
+      enum: [IN_APP, EMAIL]
+
+    Asset:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: f225a7c1-e00e-407d-957b-71990049df93
+        name:
+          type: string
+          example: Bitcoin
+        symbol:
+          type: string
+          example: BTC
+        type:
+          $ref: '#/components/schemas/AssetType'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    SentimentResult:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        postId:
+          type: string
+          format: uuid
+        sentimentScore:
+          type: number
+          minimum: -1
+          maximum: 1
+          example: 0.55
+        impactScore:
+          type: number
+          minimum: 0
+          maximum: 100
+          example: 67
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+          example: 0.75
+        category:
+          $ref: '#/components/schemas/SentimentCategory'
+        reason:
+          type: string
+          example: "Matched 2 keyword(s): +bullish, +breakout"
+        isWhaleAlert:
+          type: boolean
+          example: false
+        analyzedBy:
+          $ref: '#/components/schemas/AnalysisMethod'
+
+    Post:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 3468ebb0-1f02-42e9-be07-4792f9d33058
+        assetId:
+          type: string
+          format: uuid
+        source:
+          $ref: '#/components/schemas/PostSource'
+        externalId:
+          type: string
+          example: mock-BTC-1711875600000-4521
+        content:
+          type: string
+          example: "Bitcoin is looking bullish today! Breaking resistance at $70k \U0001F680"
+        author:
+          type: string
+          example: cryptowhale_99
+        url:
+          type: string
+          nullable: true
+        postedAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        asset:
+          $ref: '#/components/schemas/Asset'
+        sentiment:
+          $ref: '#/components/schemas/SentimentResult'
+
+    UserPreference:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        assetId:
+          type: string
+          format: uuid
+        alertEnabled:
+          type: boolean
+          example: true
+        asset:
+          $ref: '#/components/schemas/Asset'
+
+    StrategyConfig:
+      type: object
+      properties:
+        keywordsPositive:
+          type: array
+          items:
+            type: string
+          example: [bullish, moon]
+        keywordsNegative:
+          type: array
+          items:
+            type: string
+          example: [crash, dump]
+        impactThreshold:
+          type: number
+          example: 70
+        confidenceThreshold:
+          type: number
+          example: 0.6
+        sentimentWeight:
+          type: number
+          example: 0.5
+        impactWeight:
+          type: number
+          example: 0.5
+        sentimentThreshold:
+          type: number
+          example: 0.2
+        categories:
+          type: array
+          items:
+            $ref: '#/components/schemas/SentimentCategory'
+          example: [SOCIAL_BUZZ, NEWS, RUMOR, WHALE_ACTIVITY]
+
+    Strategy:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: My Strategy
+        description:
+          type: string
+          nullable: true
+        isActive:
+          type: boolean
+          example: true
+        config:
+          $ref: '#/components/schemas/StrategyConfig'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    Alert:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        type:
+          $ref: '#/components/schemas/AlertType'
+        message:
+          type: string
+          example: "Sentiment alert — score=0.70, impact=70, category=SOCIAL_BUZZ"
+        metadata:
+          type: object
+          nullable: true
+        sentAt:
+          type: boolean
+          example: false
+        createdAt:
+          type: string
+          format: date-time
+
+    SocialChannel:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+        platform:
+          $ref: '#/components/schemas/SocialPlatform'
+        handle:
+          type: string
+          example: elonmusk
+        displayName:
+          type: string
+          nullable: true
+          example: Elon Musk
+        isDefault:
+          type: boolean
+          example: true
+        createdByUserId:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+
+    DeepAnalysisResponse:
+      type: object
+      properties:
+        postId:
+          type: string
+          format: uuid
+        summary:
+          type: string
+          example: Market post detected with bullish signals.
+        sentiment:
+          type: string
+          enum: [BULLISH, BEARISH, NEUTRAL]
+          example: BULLISH
+        reasoning:
+          type: string
+          example: Strong positive keywords detected in context of BTC price action.
+        keyThemes:
+          type: array
+          items:
+            type: string
+          example: [market sentiment, price breakout]
+        riskLevel:
+          type: string
+          enum: [LOW, MEDIUM, HIGH]
+          example: MEDIUM
+        recommendation:
+          type: string
+          example: Monitor closely for confirmation of breakout.
+        analyzedAt:
+          type: string
+          format: date-time
+
+    ErrorResponse:
+      type: object
+      properties:
+        statusCode:
+          type: integer
+          example: 401
+        timestamp:
+          type: string
+          format: date-time
+        path:
+          type: string
+          example: /api/analysis/deep
+        message:
+          type: object
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid JWT token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+paths:
+  /api/health:
+    get:
+      tags: [Health]
+      summary: Health check (no auth required)
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  service:
+                    type: string
+                    example: market-sentiment-api
+                  version:
+                    type: string
+                    example: 1.0.0
+                  timestamp:
+                    type: string
+                    format: date-time
+
+  /api/auth/signup:
+    post:
+      tags: [Auth]
+      summary: Create a new account
+      operationId: authSignup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: test@test.com
+                password:
+                  type: string
+                  minLength: 8
+                  example: Test1234!
+                name:
+                  type: string
+                  example: Test User
+      responses:
+        '201':
+          description: Account created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accessToken:
+                    type: string
+                    example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI1NTBlODQwMC1lMjliLTQxZDQtYTcxNi00NDY2NTU0NDAwMDAiLCJlbWFpbCI6InRlc3RAdGVzdC5jb20iLCJpYXQiOjE3NDM1MzIwMDB9.example_signature"
+                  user:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      email:
+                        type: string
+                        example: test@test.com
+                      name:
+                        type: string
+                        example: Test User
+
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      summary: Login and get JWT token
+      operationId: authLogin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: test@test.com
+                password:
+                  type: string
+                  example: Test1234!
+      responses:
+        '200':
+          description: JWT token returned
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accessToken:
+                    type: string
+                    example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI1NTBlODQwMC1lMjliLTQxZDQtYTcxNi00NDY2NTU0NDAwMDAiLCJlbWFpbCI6InRlc3RAdGVzdC5jb20iLCJpYXQiOjE3NDM1MzIwMDB9.example_signature"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/users/me:
+    get:
+      tags: [Users]
+      summary: Get current user profile
+      operationId: getMe
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                    example: 550e8400-e29b-41d4-a716-446655440000
+                  email:
+                    type: string
+                    example: test@test.com
+                  name:
+                    type: string
+                    example: Test User
+                  isVerified:
+                    type: boolean
+                    example: false
+                  createdAt:
+                    type: string
+                    format: date-time
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/assets:
+    get:
+      tags: [Assets]
+      summary: List all assets (public, no auth required)
+      operationId: listAssets
+      responses:
+        '200':
+          description: Array of assets
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Asset'
+    post:
+      tags: [Assets]
+      summary: Create a new asset
+      operationId: createAsset
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, symbol, type]
+              properties:
+                name:
+                  type: string
+                  example: Dogecoin
+                symbol:
+                  type: string
+                  example: DOGE
+                type:
+                  $ref: '#/components/schemas/AssetType'
+      responses:
+        '201':
+          description: Asset created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Asset'
+
+  /api/assets/tracked/me:
+    get:
+      tags: [Assets]
+      summary: Get assets tracked by the current user
+      operationId: getTrackedAssets
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Array of tracked assets
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Asset'
+
+  /api/assets/{id}:
+    get:
+      tags: [Assets]
+      summary: Get a single asset by ID
+      operationId: getAssetById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: f225a7c1-e00e-407d-957b-71990049df93
+      responses:
+        '200':
+          description: Asset object
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Asset'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/assets/add:
+    post:
+      tags: [Assets]
+      summary: Track an asset (add to watchlist)
+      operationId: trackAsset
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [assetId]
+              properties:
+                assetId:
+                  type: string
+                  format: uuid
+                  example: f225a7c1-e00e-407d-957b-71990049df93
+      responses:
+        '201':
+          description: UserPreference created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserPreference'
+
+  /api/assets/remove:
+    delete:
+      tags: [Assets]
+      summary: Untrack an asset (remove from watchlist)
+      operationId: untrackAsset
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [assetId]
+              properties:
+                assetId:
+                  type: string
+                  format: uuid
+                  example: f225a7c1-e00e-407d-957b-71990049df93
+      responses:
+        '200':
+          description: Asset untracked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Asset untracked
+
+  /api/assets/{id}/track:
+    post:
+      tags: [Assets]
+      summary: Track asset by path param (legacy)
+      operationId: trackAssetLegacy
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: f225a7c1-e00e-407d-957b-71990049df93
+      responses:
+        '201':
+          description: Asset tracked
+    delete:
+      tags: [Assets]
+      summary: Untrack asset by path param (legacy)
+      operationId: untrackAssetLegacy
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: f225a7c1-e00e-407d-957b-71990049df93
+      responses:
+        '204':
+          description: No content
+
+  /api/preferences:
+    get:
+      tags: [Preferences]
+      summary: Get all user preferences (with asset details)
+      operationId: listPreferences
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Array of preferences
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/UserPreference'
+    post:
+      tags: [Preferences]
+      summary: Create or update a preference
+      operationId: upsertPreference
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [assetId]
+              properties:
+                assetId:
+                  type: string
+                  format: uuid
+                  example: f225a7c1-e00e-407d-957b-71990049df93
+                alertEnabled:
+                  type: boolean
+                  example: true
+      responses:
+        '200':
+          description: Updated preference
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserPreference'
+
+  /api/preferences/{assetId}/toggle-alert:
+    patch:
+      tags: [Preferences]
+      summary: Toggle alertEnabled on/off for an asset
+      operationId: toggleAlert
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: assetId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: f225a7c1-e00e-407d-957b-71990049df93
+      responses:
+        '200':
+          description: Preference with toggled alertEnabled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserPreference'
+
+  /api/posts:
+    get:
+      tags: [Posts]
+      summary: List posts with optional filters
+      operationId: listPosts
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: assetId
+          in: query
+          schema:
+            type: string
+            format: uuid
+          example: f225a7c1-e00e-407d-957b-71990049df93
+        - name: source
+          in: query
+          schema:
+            $ref: '#/components/schemas/PostSource'
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+          example: 20
+      responses:
+        '200':
+          description: Array of posts with sentiment
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Post'
+    post:
+      tags: [Posts]
+      summary: Manually insert a post (for testing)
+      operationId: createPost
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [assetId, source, content]
+              properties:
+                assetId:
+                  type: string
+                  format: uuid
+                  example: f225a7c1-e00e-407d-957b-71990049df93
+                source:
+                  $ref: '#/components/schemas/PostSource'
+                content:
+                  type: string
+                  example: "BTC is looking very bullish after the breakout \U0001F680"
+                author:
+                  type: string
+                  example: manual-test-user
+                url:
+                  type: string
+                  example: https://twitter.com/example
+                postedAt:
+                  type: string
+                  format: date-time
+                  example: "2026-04-01T10:00:00.000Z"
+      responses:
+        '201':
+          description: Post created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Post'
+
+  /api/posts/asset/{assetId}:
+    get:
+      tags: [Posts]
+      summary: List posts for a specific asset
+      operationId: listPostsByAsset
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: assetId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: f225a7c1-e00e-407d-957b-71990049df93
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+          example: 10
+      responses:
+        '200':
+          description: Array of posts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Post'
+
+  /api/posts/{id}:
+    get:
+      tags: [Posts]
+      summary: Get a single post with sentiment and asset
+      operationId: getPostById
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: 3468ebb0-1f02-42e9-be07-4792f9d33058
+      responses:
+        '200':
+          description: Post with sentiment
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Post'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/sentiment/analyze-llm/{postId}:
+    post:
+      tags: [Sentiment]
+      summary: Trigger LLM analysis for a post (legacy endpoint)
+      operationId: analyzeLlm
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: 3468ebb0-1f02-42e9-be07-4792f9d33058
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text:
+                  type: string
+                  example: Bitcoin is breaking out. Very bullish signal.
+      responses:
+        '200':
+          description: LLM analysis result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeepAnalysisResponse'
+
+  /api/analysis/deep:
+    post:
+      tags: [Analysis]
+      summary: On-demand deep LLM analysis for a post
+      description: |
+        Only triggered by user action — NEVER runs automatically.
+        Falls back to a keyword-based mock response if `OPENAI_API_KEY` is not configured.
+      operationId: deepAnalysis
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [postId]
+              properties:
+                postId:
+                  type: string
+                  format: uuid
+                  example: 3468ebb0-1f02-42e9-be07-4792f9d33058
+      responses:
+        '200':
+          description: Deep analysis result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeepAnalysisResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/strategies/strategy:
+    get:
+      tags: [Strategies]
+      summary: Get user's active strategy config (returns defaults if none)
+      operationId: getActiveStrategy
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Active strategy config
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StrategyConfig'
+
+  /api/strategies/strategy/update:
+    post:
+      tags: [Strategies]
+      summary: Create or update the active strategy (partial updates supported)
+      operationId: upsertActiveStrategy
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                keywordsPositive:
+                  type: array
+                  items:
+                    type: string
+                  example: [bullish, moon, breakout]
+                keywordsNegative:
+                  type: array
+                  items:
+                    type: string
+                  example: [crash, dump, bearish]
+                impactThreshold:
+                  type: number
+                  minimum: 0
+                  maximum: 100
+                  example: 65
+                confidenceThreshold:
+                  type: number
+                  minimum: 0
+                  maximum: 1
+                  example: 0.5
+                sentimentWeight:
+                  type: number
+                  minimum: 0
+                  maximum: 1
+                  example: 0.6
+                impactWeight:
+                  type: number
+                  minimum: 0
+                  maximum: 1
+                  example: 0.4
+                sentimentThreshold:
+                  type: number
+                  minimum: 0
+                  maximum: 1
+                  example: 0.2
+                categories:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/SentimentCategory'
+                  example: [SOCIAL_BUZZ, NEWS, WHALE_ACTIVITY]
+      responses:
+        '200':
+          description: Updated strategy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Strategy'
+
+  /api/strategies:
+    get:
+      tags: [Strategies]
+      summary: List all user strategies
+      operationId: listStrategies
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Array of strategies
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Strategy'
+    post:
+      tags: [Strategies]
+      summary: Create a new strategy
+      operationId: createStrategy
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, config]
+              properties:
+                name:
+                  type: string
+                  example: Aggressive Bull Strategy
+                description:
+                  type: string
+                  example: High impact threshold with bullish bias
+                config:
+                  $ref: '#/components/schemas/StrategyConfig'
+      responses:
+        '201':
+          description: Strategy created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Strategy'
+
+  /api/strategies/{id}:
+    get:
+      tags: [Strategies]
+      summary: Get a strategy by ID
+      operationId: getStrategyById
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: 550e8400-e29b-41d4-a716-446655440000
+      responses:
+        '200':
+          description: Strategy object
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Strategy'
+    put:
+      tags: [Strategies]
+      summary: Update a strategy
+      operationId: updateStrategy
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: 550e8400-e29b-41d4-a716-446655440000
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  example: Updated Strategy Name
+                isActive:
+                  type: boolean
+                  example: true
+                config:
+                  $ref: '#/components/schemas/StrategyConfig'
+      responses:
+        '200':
+          description: Updated strategy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Strategy'
+    delete:
+      tags: [Strategies]
+      summary: Delete a strategy
+      operationId: deleteStrategy
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: 550e8400-e29b-41d4-a716-446655440000
+      responses:
+        '200':
+          description: Strategy deleted
+
+  /api/alerts:
+    get:
+      tags: [Alerts]
+      summary: Get all alerts for the current user
+      operationId: listAlerts
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Array of alerts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Alert'
+
+  /api/channels:
+    get:
+      tags: [Channels]
+      summary: List default and user's custom channels
+      operationId: listChannels
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Default and custom channel lists
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  defaults:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SocialChannel'
+                  custom:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SocialChannel'
+
+  /api/channels/followed:
+    get:
+      tags: [Channels]
+      summary: List channels the user is following
+      operationId: listFollowedChannels
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Array of followed channels
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SocialChannel'
+
+  /api/channels/follow:
+    post:
+      tags: [Channels]
+      summary: Follow a channel (max 15 per user)
+      operationId: followChannel
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [channelId]
+              properties:
+                channelId:
+                  type: string
+                  format: uuid
+                  example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+      responses:
+        '201':
+          description: UserChannel created with nested channel
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  userId:
+                    type: string
+                    format: uuid
+                  channelId:
+                    type: string
+                    format: uuid
+                  channel:
+                    $ref: '#/components/schemas/SocialChannel'
+
+  /api/channels/unfollow:
+    delete:
+      tags: [Channels]
+      summary: Unfollow a channel
+      operationId: unfollowChannel
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [channelId]
+              properties:
+                channelId:
+                  type: string
+                  format: uuid
+                  example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+      responses:
+        '200':
+          description: Unfollowed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Unfollowed successfully
+
+  /api/channels/custom:
+    post:
+      tags: [Channels]
+      summary: Add a custom channel and auto-follow it (max 15 total)
+      operationId: addCustomChannel
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [platform, handle]
+              properties:
+                platform:
+                  $ref: '#/components/schemas/SocialPlatform'
+                handle:
+                  type: string
+                  example: CoinBureau
+                displayName:
+                  type: string
+                  example: Coin Bureau
+      responses:
+        '201':
+          description: Custom channel created and auto-followed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SocialChannel'
+
+  /api/whale/check:
+    post:
+      tags: [Whale]
+      summary: Manual whale detection check
+      operationId: whaleCheck
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content:
+                  type: string
+                  example: "Massive whale just moved 10,000 BTC off exchanges \U0001F40B"
+                authorFollowers:
+                  type: number
+                  example: 320000
+                mentionCount:
+                  type: number
+                  example: 5
+                retweetCount:
+                  type: number
+                  example: 1500
+                likeCount:
+                  type: number
+                  example: 8000
+      responses:
+        '200':
+          description: Whale detection result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  isWhale:
+                    type: boolean
+                    example: true
+                  reason:
+                    type: string
+                    example: High follower count + whale keywords detected
+                  confidenceBoost:
+                    type: number
+                    example: 0.15
