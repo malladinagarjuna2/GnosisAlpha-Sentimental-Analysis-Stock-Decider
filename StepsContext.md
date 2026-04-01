@@ -1,4 +1,4 @@
-# Market Sentiment Intelligence — Implementation Context (Steps 3–8)
+# Market Sentiment Intelligence — Implementation Context (Steps 3–11)
 
 ## Project Overview
 Full-stack hackathon project: "Market Sentiment Intelligence"
@@ -209,6 +209,204 @@ THEN → create IN_APP alert for user
 
 ---
 
+## STEP 9 — Alerts (Email + In-App)
+
+### What was implemented:
+Alert system that triggers when sentiment analysis meets user strategy thresholds. Supports both in-app alerts (stored in DB) and email alerts (via nodemailer).
+
+### Alert Trigger Logic:
+```
+IF confidence >= confidenceThreshold
+AND impactScore >= impactThreshold
+AND category in user's configured categories
+THEN → create IN_APP alert + send email (if SMTP configured)
+```
+
+### Endpoints:
+- `GET /api/alerts` — list all alerts for the authenticated user
+
+### Email Service:
+- Uses **nodemailer** with Gmail SMTP
+- Only initializes if real SMTP credentials are in `.env`
+- Silently skips email if SMTP not configured (IN_APP alerts still created)
+- HTML email template with sentiment details
+
+### .env for email:
+```
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your@gmail.com
+SMTP_PASS=your-16-char-gmail-app-password
+```
+
+### Files created/modified:
+- `src/modules/alerts/email.service.ts` — wraps nodemailer, graceful fallback
+- `src/modules/alerts/alerts.service.ts` — added `markSent()`, injects EmailService
+- `src/modules/alerts/alerts.module.ts` — registered ConfigModule + EmailService
+- `src/modules/workers/sentiment.worker.ts` — fetches user email, sends email via AlertsService after alert creation
+
+### Worker log chain (when alert fires):
+```
+[SentimentWorker] 🔍 Evaluate user=[uuid] shouldAlert=true
+[AlertsService]   Alert [IN_APP] created for user uuid
+[SentimentWorker] 🔔 Alert triggered for user [uuid] on post [uuid]
+[EmailService]    📧 Email sent to user@gmail.com     ← only if SMTP configured
+```
+
+---
+
+## STEP 10 — LLM Deep Analysis
+
+### What was implemented:
+On-demand LLM-powered deep analysis endpoint. NEVER runs automatically — only triggered by explicit API call.
+
+### Endpoint:
+- `POST /api/analysis/deep` — body: `{ "postId": "uuid" }` (JWT protected)
+
+### Behavior:
+1. Fetches post from DB (404 if not found)
+2. Fetches existing NLP result for context
+3. Calls **OpenAI GPT-4o-mini** (if `OPENAI_API_KEY` configured)
+4. Returns structured analysis JSON
+5. Falls back to keyword-based mock analysis if no API key
+
+### Response shape:
+```json
+{
+  "postId": "uuid",
+  "summary": "1-2 sentence summary",
+  "sentiment": "BULLISH | BEARISH | NEUTRAL",
+  "reasoning": "why this sentiment",
+  "keyThemes": ["theme1", "theme2"],
+  "riskLevel": "LOW | MEDIUM | HIGH",
+  "recommendation": "brief action recommendation",
+  "analyzedAt": "2026-03-31T..."
+}
+```
+
+### .env for LLM:
+```
+OPENAI_API_KEY=sk-your-openai-key    # requires billing credits
+```
+
+### Files created:
+- `src/modules/analysis/analysis.service.ts` — OpenAI integration with mock fallback
+- `src/modules/analysis/analysis.controller.ts` — `POST /analysis/deep`
+- `src/modules/analysis/analysis.module.ts` — registered in AppModule
+- `src/modules/analysis/dto/deep-analysis.dto.ts` — validated DTO
+
+---
+
+## Social Channels System (added alongside Steps 9–11)
+
+### What was implemented:
+Platform-agnostic channel system allowing users to select which social media accounts to follow for post fetching. Supports default (system) channels and user-added custom channels with a max cap of 15.
+
+### DB Models:
+- `SocialChannel` — `id`, `platform` (TWITTER | REDDIT), `handle`, `displayName`, `isDefault`, `createdByUserId`
+  - Unique on `[platform, handle]`
+- `UserChannel` — `id`, `userId`, `channelId`
+  - Unique on `[userId, channelId]`
+
+### Endpoints:
+- `GET /api/channels` — list all default + user's custom channels
+- `GET /api/channels/followed` — list channels the user is following
+- `POST /api/channels/follow` — follow a channel by ID (max 15 enforced)
+- `DELETE /api/channels/unfollow` — unfollow a channel
+- `POST /api/channels/custom` — add a custom handle and auto-follow (body: `{ "platform": "TWITTER", "handle": "@username" }`)
+
+### Default seeded channels:
+| Handle | Display Name |
+|---|---|
+| elonmusk | Elon Musk |
+| POTUS | President of the United States |
+| Ro_Kum | Ro Kum |
+| VitalikButerin | Vitalik Buterin |
+| CryptoCred | CryptoCred |
+| weekaborkar | Weekend Investing |
+
+### Platform-agnostic architecture:
+- `SocialFetcherPort` — abstract interface any platform must implement
+  - `fetchByChannel(handle, maxResults, sinceHours)` → `SocialPost[] | null`
+  - `isConfigured()` → boolean
+- `TwitterFetcherAdapter` — implements the port for Twitter API v2 (Bearer Token auth)
+- Future: `RedditFetcherAdapter`, `TelegramFetcherAdapter`, etc.
+
+### Fetcher behavior:
+1. Checks if Twitter adapter is configured (`TWITTER_BEARER_TOKEN` in .env)
+2. If yes → fetches recent tweets (last 48 hours) from all channels that have at least one follower
+3. Matches tweet content to tracked assets using keyword mapping (BTC, ETH, TSLA, etc.)
+4. Falls back to mock posts if no real API configured or no channels followed
+
+### .env for Twitter:
+```
+TWITTER_BEARER_TOKEN=your_bearer_token
+```
+
+### Files created/modified:
+- `src/modules/fetcher/social-fetcher.port.ts` — platform-agnostic interface
+- `src/modules/fetcher/twitter-fetcher.adapter.ts` — Twitter API v2 adapter
+- `src/modules/channels/channels.module.ts` — new module
+- `src/modules/channels/channels.service.ts` — CRUD + max 15 cap
+- `src/modules/channels/channels.controller.ts` — endpoints
+- `src/modules/channels/dto/follow-channel.dto.ts` — DTO
+- `src/modules/channels/dto/create-channel.dto.ts` — DTO
+- `src/modules/fetcher/seeder.service.ts` — seeds default channels on startup
+- `src/modules/fetcher/fetcher.service.ts` — rewritten for channel-based fetching
+- `src/modules/fetcher/fetcher.module.ts` — added TwitterFetcherAdapter + ChannelsModule
+- `src/prisma/prisma.service.ts` — added `socialChannel` + `userChannel` accessors
+- `prisma/schema.prisma` — added SocialChannel, UserChannel models, SocialPlatform enum
+
+---
+
+## STEP 11 — WebSockets
+
+### What was implemented:
+Real-time WebSocket support using Socket.IO. Workers publish events via Redis pub/sub, the HTTP server's gateway subscribes and emits to connected frontend clients.
+
+### Events emitted:
+| Event | When | Payload |
+|---|---|---|
+| `new-post` | PostWorker stores a new post | `{ postId, assetSymbol, content, author }` |
+| `new-sentiment` | SentimentWorker stores analysis | `{ postId, sentimentScore, impactScore, confidence, category, isWhaleAlert }` |
+| `new-alert` | SentimentWorker creates alert (to specific user room) | `{ userId, alertId, message, type, metadata }` |
+| `new-alert-broadcast` | Same as above (broadcast to all) | Same payload |
+
+### Architecture:
+```
+Worker process → Redis pub/sub → HTTP server → WebSocket Gateway → Frontend
+```
+
+- **Workers** (separate process): use `EventsBridgeService.publish()` to send events to Redis channel `ws-events`
+- **HTTP server**: `EventsListenerService` subscribes to Redis, forwards events to `EventsGateway`
+- **Gateway**: Socket.IO server, emits to connected clients. User-specific alerts use rooms (`user:{userId}`)
+
+### CORS:
+WebSocket gateway uses `FRONTEND_URL` env var (default: `http://localhost:3000`)
+
+### Files created:
+- `src/modules/events/events.gateway.ts` — Socket.IO gateway with `emitNewPost()`, `emitNewSentiment()`, `emitNewAlert()`
+- `src/modules/events/events-bridge.service.ts` — Redis pub/sub bridge (publish + subscribe)
+- `src/modules/events/events-listener.service.ts` — connects Redis subscriber to gateway (HTTP server only)
+- `src/modules/events/events.module.ts` — full module for HTTP server (gateway + bridge + listener)
+- `src/modules/events/events-worker.module.ts` — worker-only module (bridge only, no gateway)
+
+### Files modified:
+- `src/modules/workers/post.worker.ts` — emits `new-post` after storing post
+- `src/modules/workers/sentiment.worker.ts` — emits `new-sentiment` after analysis, `new-alert` after alert creation
+- `src/app.module.ts` — registered EventsModule
+- `src/worker-app.module.ts` — registered EventsWorkerModule
+
+### Frontend testing (browser console):
+```javascript
+const socket = io('http://localhost:3001');
+socket.on('new-post', (data) => console.log('NEW POST:', data));
+socket.on('new-sentiment', (data) => console.log('NEW SENTIMENT:', data));
+socket.on('new-alert-broadcast', (data) => console.log('NEW ALERT:', data));
+```
+
+---
+
 ## Environment Setup
 
 ### docker-compose.yml services:
@@ -223,6 +421,18 @@ JWT_EXPIRES_IN=7d
 REDIS_HOST=localhost
 REDIS_PORT=6379
 PORT=3001
+
+# Optional — Email alerts
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your@gmail.com
+SMTP_PASS=your-gmail-app-password
+
+# Optional — Twitter real post fetching
+TWITTER_BEARER_TOKEN=your_bearer_token
+
+# Optional — LLM deep analysis
+OPENAI_API_KEY=sk-your-openai-key
 ```
 
 ### Setup commands (one-time):

@@ -24,6 +24,9 @@ import { AlertsModule }     from './modules/alerts/alerts.module';
 import { StrategiesModule } from './modules/strategies/strategies.module';
 import { WhaleModule }       from './modules/whale/whale.module';
 import { PreferencesModule } from './modules/preferences/preferences.module';
+import { AnalysisModule }   from './modules/analysis/analysis.module';
+import { ChannelsModule }   from './modules/channels/channels.module';
+import { EventsModule }     from './modules/events/events.module';
 
 @Module({
   imports: [
@@ -44,6 +47,9 @@ import { PreferencesModule } from './modules/preferences/preferences.module';
     StrategiesModule,
     WhaleModule,
     PreferencesModule,
+    AnalysisModule,
+    ChannelsModule,
+    EventsModule,
   ],
   controllers: [AppController],
   providers: [
