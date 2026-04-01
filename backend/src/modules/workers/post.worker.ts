@@ -16,6 +16,7 @@ import {
 } from '../../constants/queue.constants';
 import type { PostJobPayload } from '../../queue/payloads/post-job.payload';
 import type { SentimentJobPayload } from '../../queue/payloads/sentiment-job.payload';
+import { EventsBridgeService } from '../events/events-bridge.service';
 
 @Processor(POST_QUEUE)
 export class PostWorker extends WorkerHost {
@@ -24,6 +25,7 @@ export class PostWorker extends WorkerHost {
   constructor(
     private readonly prisma: PrismaService,
     private readonly whaleService: WhaleService,
+    private readonly eventsBridge: EventsBridgeService,
     @InjectQueue(SENTIMENT_QUEUE) private readonly sentimentQueue: Queue,
   ) {
     super();
@@ -44,6 +46,12 @@ export class PostWorker extends WorkerHost {
       update: {},
     });
     this.logger.log(`💾 Post stored [${post.id}]`);
+
+    // 1b. Emit new-post event via Redis pub/sub → WebSocket
+    await this.eventsBridge.publish({
+      event: 'new-post',
+      data: { postId: post.id, assetSymbol, content: content.slice(0, 200), author: author ?? '' },
+    });
 
     // 2. Whale detection
     const whale = this.whaleService.detect({ content, authorFollowers, retweetCount, likeCount });

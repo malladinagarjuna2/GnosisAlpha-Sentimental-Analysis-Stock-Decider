@@ -8,9 +8,11 @@ import { Job } from 'bullmq';
 import { SentimentService } from '../sentiment/sentiment.service';
 import { StrategiesService } from '../strategies/strategies.service';
 import { AlertsService } from '../alerts/alerts.service';
+import { UsersService } from '../users/users.service';
 import { SENTIMENT_QUEUE, ANALYZE_SENTIMENT_JOB } from '../../constants/queue.constants';
 import { AnalysisMethod, AlertType } from '@prisma/client';
 import type { SentimentJobPayload } from '../../queue/payloads/sentiment-job.payload';
+import { EventsBridgeService } from '../events/events-bridge.service';
 
 @Processor(SENTIMENT_QUEUE)
 export class SentimentWorker extends WorkerHost {
@@ -20,6 +22,8 @@ export class SentimentWorker extends WorkerHost {
     private readonly sentimentService: SentimentService,
     private readonly strategiesService: StrategiesService,
     private readonly alertsService: AlertsService,
+    private readonly usersService: UsersService,
+    private readonly eventsBridge: EventsBridgeService,
   ) {
     super();
   }
@@ -64,7 +68,22 @@ export class SentimentWorker extends WorkerHost {
       `whale=${isWhaleAlert}`,
     );
 
+    // 4b. Emit new-sentiment event via Redis pub/sub → WebSocket
+    await this.eventsBridge.publish({
+      event: 'new-sentiment',
+      data: {
+        postId,
+        sentimentScore: saved.sentimentScore,
+        impactScore: saved.impactScore,
+        confidence: saved.confidence,
+        category: saved.category,
+        isWhaleAlert,
+      },
+    });
+
     // 5. Per-user strategy evaluation — trigger alerts if thresholds met
+    this.logger.log(`👥 trackedByUserIds for post [${postId}]: [${(trackedByUserIds ?? []).join(', ')}]`);
+
     for (const userId of (trackedByUserIds ?? [])) {
       const userConfig = await this.strategiesService.getActiveConfig(userId);
       const shouldAlert = this.strategiesService.evaluate(userConfig, {
@@ -73,19 +92,66 @@ export class SentimentWorker extends WorkerHost {
         confidence:     saved.confidence,
         category:       saved.category,
       });
+      this.logger.log(
+        `🔍 Evaluate user=[${userId}] shouldAlert=${shouldAlert} ` +
+        `confidence=${saved.confidence.toFixed(2)} >= ${userConfig.confidenceThreshold} | ` +
+        `impact=${saved.impactScore} >= ${userConfig.impactThreshold} | ` +
+        `category=${saved.category} in [${userConfig.categories?.join(',')}]`,
+      );
 
       if (shouldAlert) {
-        await this.alertsService.create({
+        const alertMessage =
+          `Sentiment alert — ` +
+          `score=${saved.sentimentScore.toFixed(2)}, ` +
+          `impact=${saved.impactScore}, ` +
+          `category=${saved.category}` +
+          (isWhaleAlert ? ', 🐋 WHALE DETECTED' : '');
+
+        // Store IN_APP alert
+        const alert = await this.alertsService.create({
           userId,
           type: AlertType.IN_APP,
-          message:
-            `Sentiment alert on post [${postId}]: ` +
-            `score=${saved.sentimentScore.toFixed(2)}, ` +
-            `impact=${saved.impactScore}, ` +
-            `category=${saved.category}`,
-          metadata: { postId, sentimentScore: saved.sentimentScore, impactScore: saved.impactScore },
+          message: alertMessage,
+          metadata: {
+            postId,
+            sentimentScore: saved.sentimentScore,
+            impactScore:    saved.impactScore,
+            category:       saved.category,
+            isWhaleAlert,
+          },
         });
+
         this.logger.log(`🔔 Alert triggered for user [${userId}] on post [${postId}]`);
+
+        // 5b. Emit new-alert event via Redis pub/sub → WebSocket
+        await this.eventsBridge.publish({
+          event: 'new-alert',
+          data: {
+            userId,
+            alertId: alert.id,
+            message: alertMessage,
+            type: AlertType.IN_APP,
+            metadata: { postId, sentimentScore: saved.sentimentScore, impactScore: saved.impactScore, category: saved.category, isWhaleAlert },
+          },
+        });
+
+        // Send email alert (optional — skipped if SMTP not configured)
+        const user = await this.usersService.findById(userId);
+        if (user?.email) {
+          const subject = `Market Alert: ${saved.category} signal detected`;
+          const body =
+            `A sentiment signal was detected matching your strategy.\n\n` +
+            `Post ID: ${postId}\n` +
+            `Sentiment Score: ${saved.sentimentScore.toFixed(2)}\n` +
+            `Impact Score: ${saved.impactScore}/100\n` +
+            `Confidence: ${(saved.confidence * 100).toFixed(0)}%\n` +
+            `Category: ${saved.category}\n` +
+            (isWhaleAlert ? `🐋 Whale Activity Detected\n` : '') +
+            `\nLog in to Market Sentiment Intelligence to view the full post.`;
+
+          await this.alertsService.sendEmailAlert(user.email, subject, body);
+          await this.alertsService.markSent(alert.id);
+        }
       }
     }
   }
