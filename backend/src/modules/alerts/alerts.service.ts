@@ -1,6 +1,7 @@
 // src/modules/alerts/alerts.service.ts
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { EmailService } from './email.service';
 import type { CreateAlertDto } from './dto/create-alert.dto';
 import { AlertType, Prisma } from '@prisma/client';
 
@@ -10,7 +11,10 @@ export type { CreateAlertDto };
 export class AlertsService {
   private readonly logger = new Logger(AlertsService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly emailService: EmailService,
+  ) {}
 
   async create(dto: CreateAlertDto) {
     const data: Prisma.AlertCreateInput = {
@@ -35,11 +39,18 @@ export class AlertsService {
     });
   }
 
+  markSent(alertId: string) {
+    return this.prisma.alert.update({
+      where: { id: alertId },
+      data: { sentAt: true },
+    });
+  }
+
   /**
-   * Email sending — will integrate nodemailer / SMTP in the next phase.
+   * Send email alert via nodemailer.
+   * Silently skips if SMTP is not configured.
    */
   async sendEmailAlert(to: string, subject: string, body: string): Promise<void> {
-    // TODO: integrate nodemailer with ConfigService SMTP settings
-    this.logger.log(`[EMAIL STUB] To: ${to} | Subject: ${subject} | Body: ${body.slice(0, 80)}`);
+    await this.emailService.send(to, subject, body);
   }
 }

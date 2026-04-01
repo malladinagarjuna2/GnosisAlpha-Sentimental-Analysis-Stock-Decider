@@ -40,7 +40,21 @@ export class AssetsController {
     return this.assetsService.create(dto);
   }
 
-  /** POST /api/assets/:id/track — track an asset */
+  /** POST /api/assets/add — user selects/tracks an asset (step 3 spec) */
+  @UseGuards(JwtAuthGuard)
+  @Post('add')
+  addAsset(@Body('assetId') assetId: string, @GetUser() user: AuthUser) {
+    return this.assetsService.trackAsset(user.userId, assetId);
+  }
+
+  /** DELETE /api/assets/remove — user removes a tracked asset (step 3 spec) */
+  @UseGuards(JwtAuthGuard)
+  @Delete('remove')
+  removeAsset(@Body('assetId') assetId: string, @GetUser() user: AuthUser) {
+    return this.assetsService.untrackAsset(user.userId, assetId);
+  }
+
+  /** POST /api/assets/:id/track — track an asset (legacy) */
   @UseGuards(JwtAuthGuard)
   @Post(':id/track')
   @HttpCode(HttpStatus.OK)
@@ -48,7 +62,7 @@ export class AssetsController {
     return this.assetsService.trackAsset(user.userId, id);
   }
 
-  /** DELETE /api/assets/:id/track — stop tracking */
+  /** DELETE /api/assets/:id/track — stop tracking (legacy) */
   @UseGuards(JwtAuthGuard)
   @Delete(':id/track')
   @HttpCode(HttpStatus.NO_CONTENT)

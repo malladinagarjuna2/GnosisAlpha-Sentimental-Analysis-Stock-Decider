@@ -1,12 +1,13 @@
 // src/modules/strategies/strategies.service.ts
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import type { StrategyConfig } from './dto/strategy-config.interface';
+import { StrategyConfig, DEFAULT_STRATEGY_CONFIG } from './dto/strategy-config.interface';
 import type { CreateStrategyDto } from './dto/create-strategy.dto';
 import type { UpdateStrategyDto } from './dto/update-strategy.dto';
 import { SentimentCategory } from '@prisma/client';
 
 export type { StrategyConfig };
+export { DEFAULT_STRATEGY_CONFIG };
 
 @Injectable()
 export class StrategiesService {
@@ -50,6 +51,37 @@ export class StrategiesService {
     return this.prisma.strategy.delete({ where: { id } });
   }
 
+  /** Get the user's active strategy config, or return the default if none exists */
+  async getActiveConfig(userId: string): Promise<StrategyConfig> {
+    const strategy = await this.prisma.strategy.findFirst({
+      where: { userId, isActive: true },
+      orderBy: { updatedAt: 'desc' },
+    });
+    if (!strategy) return DEFAULT_STRATEGY_CONFIG;
+    return strategy.config as unknown as StrategyConfig;
+  }
+
+  /** Upsert the user's single active strategy (for POST /strategy/update) */
+  async upsertActive(userId: string, config: StrategyConfig) {
+    const existing = await this.prisma.strategy.findFirst({
+      where: { userId, isActive: true },
+    });
+    if (existing) {
+      return this.prisma.strategy.update({
+        where: { id: existing.id },
+        data: { config: config as object, updatedAt: new Date() },
+      });
+    }
+    return this.prisma.strategy.create({
+      data: {
+        userId,
+        name: 'My Strategy',
+        config: config as object,
+        isActive: true,
+      },
+    });
+  }
+
   /**
    * Evaluate whether a sentiment result triggers an alert for a given strategy config.
    * Returns true if the alert should fire.
@@ -64,6 +96,7 @@ export class StrategiesService {
     },
   ): boolean {
     if (result.confidence < config.confidenceThreshold) return false;
+    if (result.impactScore < config.impactThreshold) return false;
     if (!config.categories.includes(result.category)) return false;
 
     const composite =

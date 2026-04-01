@@ -23,6 +23,8 @@ model User {
   preferences     UserPreference[]
   strategies      Strategy[]
   alerts          Alert[]
+  userChannels    UserChannel[]
+  customChannels  SocialChannel[]   @relation("CreatedByUser")
 }
 
 // ─── Asset ─────────────────────────────────────────────────────────────────────
@@ -113,6 +115,35 @@ model Alert {
   user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
+// ─── SocialChannel (platform-agnostic: Twitter, Reddit, etc.) ─────────────────
+model SocialChannel {
+  id              String            @id @default(uuid())
+  platform        SocialPlatform
+  handle          String            // e.g. "elonmusk", "r/Bitcoin"
+  displayName     String?           // e.g. "Elon Musk"
+  isDefault       Boolean           @default(false)
+  createdByUserId String?           // null = system default
+  createdAt       DateTime          @default(now())
+
+  createdBy       User?             @relation("CreatedByUser", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  followers       UserChannel[]
+
+  @@unique([platform, handle])
+}
+
+// ─── UserChannel (join: which channels a user follows) ────────────────────────
+model UserChannel {
+  id              String            @id @default(uuid())
+  userId          String
+  channelId       String
+  createdAt       DateTime          @default(now())
+
+  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channel         SocialChannel     @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, channelId])
+}
+
 // ─── Enums ─────────────────────────────────────────────────────────────────────
 enum AssetType {
   STOCK
@@ -120,6 +151,11 @@ enum AssetType {
 }
 
 enum PostSource {
+  TWITTER
+  REDDIT
+}
+
+enum SocialPlatform {
   TWITTER
   REDDIT
 }
