@@ -4,7 +4,7 @@
 import { Global, Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { POST_QUEUE, SENTIMENT_QUEUE } from '../constants/queue.constants';
+import { POST_QUEUE, SENTIMENT_QUEUE, FETCHER_CONTROL_QUEUE } from '../constants/queue.constants';
 
 @Global()
 @Module({
@@ -25,6 +25,7 @@ import { POST_QUEUE, SENTIMENT_QUEUE } from '../constants/queue.constants';
     BullModule.registerQueue(
       { name: POST_QUEUE },
       { name: SENTIMENT_QUEUE },
+      { name: FETCHER_CONTROL_QUEUE }, // HTTP server → Worker: manual fetch triggers
     ),
   ],
   exports: [BullModule],
