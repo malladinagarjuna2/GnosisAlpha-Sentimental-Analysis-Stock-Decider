@@ -22,6 +22,13 @@ export class FetcherService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(FetcherService.name);
   private pollTimer: NodeJS.Timeout | null = null;
 
+  /**
+   * Tracks the last successful fetch time per channel handle.
+   * Used to compute a dynamic sinceHours window — only fetches NEW tweets.
+   * First fetch defaults to 2h lookback.
+   */
+  private readonly lastFetchedAt = new Map<string, Date>();
+
   constructor(
     @InjectQueue(POST_QUEUE) private readonly postQueue: Queue,
     private readonly prisma: PrismaService,
@@ -44,55 +51,77 @@ export class FetcherService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  async poll(): Promise<void> {
+  /** Called on schedule (every 30s) — also called directly by FetcherRefreshWorker */
+  async poll(): Promise<{ enqueued: number }> {
     try {
-      // Try real API fetching from followed channels
       if (this.twitterAdapter.isConfigured()) {
-        await this.pollRealChannels();
+        return await this.pollRealChannels();
       } else {
-        // Fallback: mock posts
-        await this.pollMock();
+        return await this.pollMock();
       }
     } catch (err) {
       this.logger.error('❌ Poll failed', (err as Error).stack);
+      return { enqueued: 0 };
     }
   }
 
+  /** Returns current lastFetchedAt map (for status endpoint) */
+  getStatus(): { lastFetchedAt: Record<string, string> } {
+    const result: Record<string, string> = {};
+    for (const [handle, date] of this.lastFetchedAt.entries()) {
+      result[handle] = date.toISOString();
+    }
+    return { lastFetchedAt: result };
+  }
+
   /** Fetch from real Twitter channels that users are following */
-  private async pollRealChannels(): Promise<void> {
+  private async pollRealChannels(): Promise<{ enqueued: number }> {
     const channels = await this.channelsService.getActiveChannelsByPlatform(SocialPlatform.TWITTER);
 
     if (channels.length === 0) {
       this.logger.debug('No active Twitter channels followed by any user — using mock');
-      await this.pollMock();
-      return;
+      return await this.pollMock();
     }
 
     let totalEnqueued = 0;
 
     for (const channel of channels) {
-      const posts = await this.twitterAdapter.fetchByChannel(channel.handle, 10, 48);
+      // Dynamic window: only fetch tweets since last successful fetch for this channel.
+      // First fetch defaults to 2h lookback.
+      const lastFetch = this.lastFetchedAt.get(channel.handle);
+      const sinceHours = lastFetch
+        ? Math.max(Math.ceil((Date.now() - lastFetch.getTime()) / 3_600_000) + 1, 1)
+        : 2;
+
+      const fetchStart = new Date(); // record before fetch so we don't miss posts on concurrent fetches
+      const posts = await this.twitterAdapter.fetchByChannel(channel.handle, 10, sinceHours);
+
       if (!posts || posts.length === 0) continue;
 
       for (const post of posts) {
         await this.enqueuePost(post, PostSource.TWITTER);
         totalEnqueued++;
       }
+
+      // Update lastFetchedAt only on success
+      this.lastFetchedAt.set(channel.handle, fetchStart);
     }
 
     this.logger.log(`📥 Polled ${channels.length} channels — enqueued ${totalEnqueued} posts`);
 
-    // If no real posts were fetched, supplement with mock
     if (totalEnqueued === 0) {
       this.logger.log('📥 No real posts found — supplementing with mock data');
-      await this.pollMock();
+      return await this.pollMock();
     }
+
+    return { enqueued: totalEnqueued };
   }
 
   /** Fallback: generate mock posts */
-  private async pollMock(): Promise<void> {
+  private async pollMock(): Promise<{ enqueued: number }> {
     const posts = generateMockPosts(5);
     this.logger.log(`📥 Fetched ${posts.length} mock posts`);
+    let enqueued = 0;
 
     for (const post of posts) {
       const asset = await this.prisma.asset.findUnique({
@@ -124,11 +153,14 @@ export class FetcherService implements OnModuleInit, OnModuleDestroy {
         attempts: 3,
         backoff: { type: 'exponential', delay: 2_000 },
       });
+      enqueued++;
 
       this.logger.log(
         `📤 Enqueued [${post.assetSymbol}] "${post.content.slice(0, 55)}..."`,
       );
     }
+
+    return { enqueued };
   }
 
   /** Enqueue a real social post — resolves asset from content keywords */

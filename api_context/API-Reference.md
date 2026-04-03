@@ -491,6 +491,57 @@ Manual whale detection check.
 
 ---
 
+## 13. Fetcher Control
+
+> **Architecture note:** The refresh endpoint communicates with the worker process via `fetcher-control-queue` (BullMQ/Redis) — same decoupled pattern as the rest of the pipeline.
+
+### POST `/api/fetcher/refresh` (Auth Required)
+Trigger an **immediate fetch cycle** in the worker process. Useful when you've just posted a tweet and want it ingested right away without waiting for the next 30s poll.
+
+The worker will only fetch tweets **newer than the last successful fetch** for each channel (`lastFetchedAt` tracking), so there's no risk of re-processing old posts.
+
+**Response:**
+```json
+{
+  "status": "triggered",
+  "jobId": "42",
+  "message": "Fetch job dispatched to worker — new posts will appear in /api/posts within seconds",
+  "requestedAt": "2026-04-03T15:10:00.000Z"
+}
+```
+
+**Flow after calling this endpoint:**
+```
+POST /api/fetcher/refresh
+        │
+        ▼  enqueues trigger-fetch job
+  fetcher-control-queue (Redis/BullMQ)
+        │
+        ▼  FetcherRefreshWorker picks it up
+  fetcherService.poll() → Twitter API (sinceHours = time since lastFetchedAt)
+        │
+        ▼  new posts flow through normal pipeline
+  post-queue → PostWorker → sentiment-queue → SentimentWorker → WebSocket events
+```
+
+---
+
+### GET `/api/fetcher/status` (Auth Required)
+Get the last successful fetch time per channel handle (from the HTTP server process state).
+
+**Response:**
+```json
+{
+  "lastFetchedAt": {
+    "R0_Kum": "2026-04-03T15:09:45.000Z",
+    "elonmusk": "2026-04-03T15:09:46.000Z"
+  },
+  "message": "lastFetchedAt reflects the HTTP server process — worker process tracks the live state"
+}
+```
+
+---
+
 ## 12. Health Check
 
 ### GET `/api/health`
