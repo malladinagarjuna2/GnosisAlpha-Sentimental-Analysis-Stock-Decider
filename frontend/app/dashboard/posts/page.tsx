@@ -11,14 +11,14 @@ import { PostsFeed } from '@/components/posts/PostsFeed';
 import { Filter } from 'lucide-react';
 
 export default function PostsPage() {
-  const [selectedAsset, setSelectedAsset] = useState<string>('');
-  const [selectedSource, setSelectedSource] = useState<string>('');
+  const [selectedAsset, setSelectedAsset] = useState<string>('all');
+  const [selectedSource, setSelectedSource] = useState<string>('all');
 
   const { data: assets } = useFetch(() => assetsAPI.getAll());
 
   const params: any = { limit: 50 };
-  if (selectedAsset) params.assetId = selectedAsset;
-  if (selectedSource) params.source = selectedSource;
+  if (selectedAsset && selectedAsset !== 'all') params.assetId = selectedAsset;
+  if (selectedSource && selectedSource !== 'all') params.source = selectedSource;
 
   const { data: posts, loading: postsLoading } = useFetch(
     () => postsAPI.getAll(params),
@@ -47,7 +47,7 @@ export default function PostsPage() {
               <SelectValue placeholder="All Assets" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">All Assets</SelectItem>
+              <SelectItem value="all">All Assets</SelectItem>
               {assets?.map((asset) => (
                 <SelectItem key={asset.id} value={asset.id}>
                   {asset.symbol} - {asset.name}
@@ -61,19 +61,19 @@ export default function PostsPage() {
               <SelectValue placeholder="All Sources" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">All Sources</SelectItem>
+              <SelectItem value="all">All Sources</SelectItem>
               <SelectItem value="TWITTER">Twitter</SelectItem>
               <SelectItem value="REDDIT">Reddit</SelectItem>
             </SelectContent>
           </Select>
 
-          {(selectedAsset || selectedSource) && (
+          {(selectedAsset !== 'all' || selectedSource !== 'all') && (
             <Button
               variant="outline"
               size="sm"
               onClick={() => {
-                setSelectedAsset('');
-                setSelectedSource('');
+                setSelectedAsset('all');
+                setSelectedSource('all');
               }}
             >
               Clear Filters
@@ -83,7 +83,7 @@ export default function PostsPage() {
       </Card>
 
       {/* Posts Feed */}
-      <PostsFeed posts={posts} loading={postsLoading} />
+      <PostsFeed posts={posts || undefined} loading={postsLoading} />
     </div>
   );
 }

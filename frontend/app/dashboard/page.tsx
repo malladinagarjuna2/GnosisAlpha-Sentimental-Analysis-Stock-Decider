@@ -42,9 +42,9 @@ export default function DashboardPage() {
             </div>
             <div>
               <p className="text-sm text-muted-foreground">Tracked Assets</p>
-              <p className="text-2xl font-bold text-foreground">
+              <div className="text-2xl font-bold text-foreground">
                 {prefLoading ? <Skeleton className="w-12 h-8" /> : preferences?.length || 0}
-              </p>
+              </div>
             </div>
           </div>
         </Card>
@@ -56,9 +56,9 @@ export default function DashboardPage() {
             </div>
             <div>
               <p className="text-sm text-muted-foreground">Latest Posts</p>
-              <p className="text-2xl font-bold text-foreground">
+              <div className="text-2xl font-bold text-foreground">
                 {postsLoading ? <Skeleton className="w-12 h-8" /> : posts?.length || 0}
-              </p>
+              </div>
             </div>
           </div>
         </Card>
@@ -70,9 +70,9 @@ export default function DashboardPage() {
             </div>
             <div>
               <p className="text-sm text-muted-foreground">Active Alerts</p>
-              <p className="text-2xl font-bold text-foreground">
+              <div className="text-2xl font-bold text-foreground">
                 {alertsLoading ? <Skeleton className="w-12 h-8" /> : alerts?.length || 0}
-              </p>
+              </div>
             </div>
           </div>
         </Card>

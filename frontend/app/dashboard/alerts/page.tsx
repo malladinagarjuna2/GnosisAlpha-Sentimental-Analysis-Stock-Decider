@@ -4,7 +4,7 @@ import { useFetch } from '@/hooks/useFetch';
 import { alertsAPI } from '@/lib/api';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Alert as AlertIcon, AlertTriangle } from 'lucide-react';
+import { AlertCircle as AlertIcon, AlertTriangle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 
 export default function AlertsPage() {
@@ -39,23 +39,23 @@ export default function AlertsPage() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card className="p-6 border-border/20 bg-card/50 backdrop-blur-sm">
           <p className="text-sm text-muted-foreground mb-2">Total Alerts</p>
-          <p className="text-2xl font-bold text-foreground">
+          <div className="text-2xl font-bold text-foreground">
             {alertsLoading ? <Skeleton className="w-12 h-8" /> : sortedAlerts.length}
-          </p>
+          </div>
         </Card>
 
         <Card className="p-6 border-border/20 bg-card/50 backdrop-blur-sm">
           <p className="text-sm text-muted-foreground mb-2">High Impact</p>
-          <p className="text-2xl font-bold text-red-500">
+          <div className="text-2xl font-bold text-red-500">
             {alertsLoading ? <Skeleton className="w-12 h-8" /> : highImpactAlerts.length}
-          </p>
+          </div>
         </Card>
 
         <Card className="p-6 border-border/20 bg-card/50 backdrop-blur-sm">
           <p className="text-sm text-muted-foreground mb-2">Low Impact</p>
-          <p className="text-2xl font-bold text-yellow-500">
+          <div className="text-2xl font-bold text-yellow-500">
             {alertsLoading ? <Skeleton className="w-12 h-8" /> : lowImpactAlerts.length}
-          </p>
+          </div>
         </Card>
       </div>
 
