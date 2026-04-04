@@ -15,6 +15,10 @@ import {
   AgentsResponse,
   GeneratedStrategy,
   InvestHorizon,
+  KitePortfolioSummary,
+  KiteFunds,
+  KitePosition,
+  PlaceOrderPayload,
 } from './types';
 
 const api = apiClient.instance;
@@ -141,4 +145,14 @@ export const agentsAPI = {
 // Health
 export const healthAPI = {
   check: () => api.get('/health'),
+};
+
+// Zerodha
+export const zerodhaAPI = {
+  status: () => api.get<{ connected: boolean; userId?: string; userName?: string }>('/zerodha/status'),
+  portfolio: () => api.get<KitePortfolioSummary>('/zerodha/portfolio'),
+  funds: () => api.get<KiteFunds>('/zerodha/funds'),
+  positions: () => api.get<KitePosition[]>('/zerodha/positions'),
+  orders: () => api.get<any[]>('/zerodha/orders'),
+  placeOrder: (payload: PlaceOrderPayload) => api.post<{ orderId: string; status: string }>('/zerodha/order', payload),
 };

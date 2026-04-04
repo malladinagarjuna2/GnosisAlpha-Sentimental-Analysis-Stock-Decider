@@ -277,6 +277,61 @@ export interface AgentsResponse {
   };
 }
 
+// ─── Zerodha / Kite ─────────────────────────────────────────────────────────
+
+export interface KiteHolding {
+  tradingsymbol: string;
+  exchange: string;
+  isin: string;
+  product: string;
+  quantity: number;
+  averagePrice: number;
+  lastPrice: number;
+  closePrice: number;
+  pnl: number;
+  dayChange: number;
+  dayChangePct: number;
+  currentValue: number;
+  investedValue: number;
+}
+
+export interface KitePortfolioSummary {
+  totalInvested: number;
+  currentValue: number;
+  totalPnL: number;
+  totalPnLPct: number;
+  dayPnL: number;
+  holdingCount: number;
+  availableCash: number;
+  holdings: KiteHolding[];
+}
+
+export interface KiteFunds {
+  equity: { net: number; available: number; usedMargin: number };
+  commodity: { net: number; available: number; usedMargin: number };
+}
+
+export interface KitePosition {
+  tradingsymbol: string;
+  exchange: string;
+  product: string;
+  quantity: number;
+  averagePrice: number;
+  lastPrice: number;
+  pnl: number;
+  side: 'BUY' | 'SELL' | 'NONE';
+}
+
+export interface PlaceOrderPayload {
+  tradingsymbol: string;
+  exchange: 'NSE' | 'BSE';
+  side: 'BUY' | 'SELL';
+  quantity: number;
+  orderType: 'MARKET' | 'LIMIT';
+  price?: number;
+  postId?: string;
+}
+
 export interface GeneratedStrategy {
   name: string;
   description: string;

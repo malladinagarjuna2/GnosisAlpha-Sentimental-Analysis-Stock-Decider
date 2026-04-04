@@ -9,8 +9,10 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
-import { ArrowLeft, ThumbsUp, ThumbsDown, Zap, ExternalLink, Sparkles, Shield, Scale, Flame, CheckCircle2, Brain, Users, ArrowUpRight, ArrowDownRight, Minus } from 'lucide-react';
+import { ArrowLeft, ThumbsUp, ThumbsDown, Zap, ExternalLink, Sparkles, Shield, Scale, Flame, CheckCircle2, Brain, Users, ArrowUpRight, ArrowDownRight, Minus, ShoppingCart, X, Plus } from 'lucide-react';
+import { Input } from '@/components/ui/input';
 import type { GeneratedStrategy, MultiAgentAnalysis } from '@/lib/types';
+import { zerodhaAPI } from '@/lib/api';
 
 export default function PostDetailsPage() {
   const params = useParams();
@@ -31,6 +33,12 @@ export default function PostDetailsPage() {
   const [strategies, setStrategies] = useState<GeneratedStrategy[]>([]);
   const [isGeneratingStrategies, setIsGeneratingStrategies] = useState(false);
   const [appliedIndex, setAppliedIndex] = useState<number | null>(null);
+
+  const [tradeModal, setTradeModal] = useState<{ symbol: string; side: 'BUY' | 'SELL' } | null>(null);
+  const [tradeQty, setTradeQty] = useState(1);
+  const [tradeOrderType, setTradeOrderType] = useState<'MARKET' | 'LIMIT'>('MARKET');
+  const [tradePrice, setTradePrice] = useState('');
+  const [isPlacingOrder, setIsPlacingOrder] = useState(false);
 
   const handleRunAnalysis = async () => {
     try {
@@ -80,6 +88,31 @@ export default function PostDetailsPage() {
       toast.error(err?.response?.data?.message || 'Could not generate strategies from this post');
     } finally {
       setIsGeneratingStrategies(false);
+    }
+  };
+
+  const handlePlaceOrder = async () => {
+    if (!tradeModal) return;
+    setIsPlacingOrder(true);
+    try {
+      await zerodhaAPI.placeOrder({
+        tradingsymbol: tradeModal.symbol,
+        exchange: 'NSE',
+        side: tradeModal.side,
+        quantity: tradeQty,
+        orderType: tradeOrderType,
+        price: tradeOrderType === 'LIMIT' ? parseFloat(tradePrice) : undefined,
+        postId,
+      });
+      toast.success(`${tradeModal.side} order placed for ${tradeModal.symbol}`);
+      setTradeModal(null);
+      setTradeQty(1);
+      setTradePrice('');
+      setTradeOrderType('MARKET');
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Order failed');
+    } finally {
+      setIsPlacingOrder(false);
     }
   };
 
@@ -318,6 +351,24 @@ export default function PostDetailsPage() {
             >
               Analyzed at: {new Date(analysis.analyzedAt).toLocaleString()}
             </time>
+
+            {/* Trade This Stock */}
+            {post?.asset && (
+              <div className="flex gap-3 mt-4">
+                <Button
+                  onClick={() => { setTradeModal({ symbol: post.asset!.symbol, side: 'BUY' }); setTradeQty(1); setTradeOrderType('MARKET'); setTradePrice(''); }}
+                  className="flex-1 bg-green-600 hover:bg-green-700 text-white gap-2"
+                >
+                  <ShoppingCart className="h-4 w-4" /> Buy {post.asset.symbol}
+                </Button>
+                <Button
+                  onClick={() => { setTradeModal({ symbol: post.asset!.symbol, side: 'SELL' }); setTradeQty(1); setTradeOrderType('MARKET'); setTradePrice(''); }}
+                  className="flex-1 bg-red-600 hover:bg-red-700 text-white gap-2"
+                >
+                  <ShoppingCart className="h-4 w-4" /> Sell {post.asset.symbol}
+                </Button>
+              </div>
+            )}
 
             {/* Generate Strategy Button — appears after analysis */}
             <Button
@@ -687,6 +738,80 @@ export default function PostDetailsPage() {
           </div>
         )}
       </Card>
+
+      {/* Trade Confirmation Modal */}
+      {tradeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <Card className="w-full max-w-md p-6 border-border/20 bg-card space-y-5">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold">
+                <span className={tradeModal.side === 'BUY' ? 'text-green-400' : 'text-red-400'}>{tradeModal.side}</span>
+                {' '}{tradeModal.symbol}
+              </h3>
+              <Button variant="ghost" size="sm" onClick={() => setTradeModal(null)}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+
+            {/* Order Type */}
+            <div className="flex gap-2">
+              {(['MARKET', 'LIMIT'] as const).map(t => (
+                <button
+                  key={t}
+                  onClick={() => setTradeOrderType(t)}
+                  className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                    tradeOrderType === t ? 'bg-accent text-accent-foreground' : 'bg-muted/30 text-muted-foreground hover:bg-muted/50'
+                  }`}
+                >{t}</button>
+              ))}
+            </div>
+
+            {/* Quantity */}
+            <div>
+              <p className="text-xs text-muted-foreground mb-2">Quantity</p>
+              <div className="flex items-center gap-3">
+                <Button variant="outline" size="sm" onClick={() => setTradeQty(q => Math.max(1, q - 1))}>
+                  <Minus className="h-3 w-3" />
+                </Button>
+                <span className="w-12 text-center font-bold font-code">{tradeQty}</span>
+                <Button variant="outline" size="sm" onClick={() => setTradeQty(q => q + 1)}>
+                  <Plus className="h-3 w-3" />
+                </Button>
+              </div>
+            </div>
+
+            {/* Limit Price */}
+            {tradeOrderType === 'LIMIT' && (
+              <div>
+                <p className="text-xs text-muted-foreground mb-2">Limit Price (₹)</p>
+                <Input
+                  type="number"
+                  placeholder="0.00"
+                  value={tradePrice}
+                  onChange={e => setTradePrice(e.target.value)}
+                  className="font-code"
+                />
+              </div>
+            )}
+
+            {/* Warning */}
+            <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
+              <p className="text-xs text-amber-400 font-semibold">⚠ Real order — this will execute on your Zerodha account</p>
+            </div>
+
+            <div className="flex gap-3">
+              <Button variant="outline" className="flex-1" onClick={() => setTradeModal(null)}>Cancel</Button>
+              <Button
+                className={`flex-1 text-white ${tradeModal.side === 'BUY' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}`}
+                onClick={handlePlaceOrder}
+                disabled={isPlacingOrder || (tradeOrderType === 'LIMIT' && !tradePrice)}
+              >
+                {isPlacingOrder ? 'Placing...' : `Confirm ${tradeModal.side}`}
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }

@@ -30,6 +30,7 @@ import { EventsModule }     from './modules/events/events.module';
 import { ProfileModule }    from './modules/profile/profile.module';
 import { BacktestModule }   from './modules/backtest/backtest.module';
 import { AgentsModule }     from './modules/agents/agents.module';
+import { ZerodhaModule }    from './modules/zerodha/zerodha.module';
 
 @Module({
   imports: [
@@ -56,6 +57,7 @@ import { AgentsModule }     from './modules/agents/agents.module';
     ProfileModule,     // investor onboarding: risk, horizon, capital
     BacktestModule,    // 7-day backtest engine with trade simulation
     AgentsModule,      // multi-agent orchestrator (NLP now, LLM/algo/multi later)
+    ZerodhaModule,     // Zerodha Kite Connect — holdings, funds, order placement
   ],
   controllers: [AppController],
   providers: [

@@ -12,6 +12,7 @@ import {
   Bot,
   UserCog,
   Sparkles,
+  Briefcase,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -35,6 +36,11 @@ const navItems = [
     label: 'Alerts',
     href: '/dashboard/alerts',
     icon: Bell,
+  },
+  {
+    label: 'Portfolio',
+    href: '/dashboard/portfolio',
+    icon: Briefcase,
   },
 ];
 

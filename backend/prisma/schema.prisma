@@ -26,6 +26,7 @@ model User {
   userChannels    UserChannel[]
   customChannels  SocialChannel[]   @relation("CreatedByUser")
   investorProfile InvestorProfile?
+  tradeOrders     TradeOrder[]
 }
 
 // ─── InvestorProfile (onboarding: risk, horizon, capital) ───────────────────
@@ -157,6 +158,24 @@ model UserChannel {
   channel         SocialChannel     @relation(fields: [channelId], references: [id], onDelete: Cascade)
 
   @@unique([userId, channelId])
+}
+
+// ─── TradeOrder — audit log of all Zerodha orders placed via the app ──────────
+model TradeOrder {
+  id           String    @id @default(uuid())
+  userId       String
+  postId       String?
+  symbol       String
+  exchange     String
+  orderType    String
+  side         String
+  qty          Int
+  price        Float?
+  kiteOrderId  String?
+  status       String    @default("PLACED")
+  placedAt     DateTime  @default(now())
+
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 // ─── Enums ─────────────────────────────────────────────────────────────────────
