@@ -16,9 +16,16 @@ export class AnalysisController {
    */
   @Post('deep')
   deepAnalysis(@Body() dto: DeepAnalysisDto) {
-    if (dto.text) {
-      return this.analysisService.deepAnalyzeText(dto.text, dto.asset ?? 'UNKNOWN');
-    }
-    return this.analysisService.deepAnalyze(dto.postId!);
+    return this.analysisService.deepAnalyze(dto.postId);
+  }
+
+  /**
+   * POST /analysis/multi-agent
+   * Run all registered agents (NLP, future agents) against a single post.
+   * Returns aggregated signals + consensus action.
+   */
+  @Post('multi-agent')
+  multiAgentAnalysis(@Body() dto: DeepAnalysisDto) {
+    return this.analysisService.multiAgentAnalyze(dto.postId);
   }
 }

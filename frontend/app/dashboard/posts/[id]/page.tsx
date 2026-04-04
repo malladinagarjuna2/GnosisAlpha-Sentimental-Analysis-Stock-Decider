@@ -9,8 +9,8 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
-import { ArrowLeft, ThumbsUp, ThumbsDown, Zap, ExternalLink, Sparkles, Shield, Scale, Flame, CheckCircle2 } from 'lucide-react';
-import type { GeneratedStrategy } from '@/lib/types';
+import { ArrowLeft, ThumbsUp, ThumbsDown, Zap, ExternalLink, Sparkles, Shield, Scale, Flame, CheckCircle2, Brain, Users, ArrowUpRight, ArrowDownRight, Minus } from 'lucide-react';
+import type { GeneratedStrategy, MultiAgentAnalysis } from '@/lib/types';
 
 export default function PostDetailsPage() {
   const params = useParams();
@@ -24,6 +24,9 @@ export default function PostDetailsPage() {
 
   const [analysis, setAnalysis] = useState<any>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+
+  const [multiAgentResult, setMultiAgentResult] = useState<MultiAgentAnalysis | null>(null);
+  const [isMultiAgentAnalyzing, setIsMultiAgentAnalyzing] = useState(false);
 
   const [strategies, setStrategies] = useState<GeneratedStrategy[]>([]);
   const [isGeneratingStrategies, setIsGeneratingStrategies] = useState(false);
@@ -40,6 +43,21 @@ export default function PostDetailsPage() {
       toast.error('Could not generate deep analysis');
     } finally {
       setIsAnalyzing(false);
+    }
+  };
+
+  const handleRunMultiAgent = async () => {
+    try {
+      setIsMultiAgentAnalyzing(true);
+      setMultiAgentResult(null);
+      const response = await analysisAPI.multiAgent(postId);
+      setMultiAgentResult(response.data);
+      toast.success('Multi-agent analysis complete');
+    } catch (error) {
+      console.error('Multi-agent analysis failed:', error);
+      toast.error('Could not run multi-agent analysis');
+    } finally {
+      setIsMultiAgentAnalyzing(false);
     }
   };
 
@@ -230,15 +248,28 @@ export default function PostDetailsPage() {
           </div>
         )}
 
-        {/* Deep Analysis Button */}
-        <Button
-          onClick={handleRunAnalysis}
-          disabled={isAnalyzing}
-          className="w-full bg-accent hover:bg-accent/90 text-accent-foreground mb-8"
-        >
-          <Zap className="h-4 w-4 mr-2" />
-          {isAnalyzing ? 'Analyzing...' : 'Run Deep LLM Analysis'}
-        </Button>
+        {/* Analysis Buttons */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+          <Button
+            onClick={handleRunAnalysis}
+            disabled={isAnalyzing || isMultiAgentAnalyzing}
+            className="h-auto py-4 flex flex-col gap-1 bg-accent hover:bg-accent/90 text-accent-foreground"
+          >
+            <Zap className={`h-5 w-5 ${isAnalyzing ? 'animate-spin' : ''}`} />
+            <span className="font-semibold">{isAnalyzing ? 'Analyzing...' : 'Deep LLM Analysis'}</span>
+            <span className="text-xs opacity-70">Single GPT-4o-mini deep dive</span>
+          </Button>
+
+          <Button
+            onClick={handleRunMultiAgent}
+            disabled={isMultiAgentAnalyzing || isAnalyzing}
+            className="h-auto py-4 flex flex-col gap-1 bg-violet-600 hover:bg-violet-700 text-white"
+          >
+            <Users className={`h-5 w-5 ${isMultiAgentAnalyzing ? 'animate-spin' : ''}`} />
+            <span className="font-semibold">{isMultiAgentAnalyzing ? 'Running Agents...' : 'Multi-Agent Analysis'}</span>
+            <span className="text-xs opacity-70">All registered agents + consensus</span>
+          </Button>
+        </div>
 
         {/* LLM Analysis Results */}
         {analysis && (
@@ -307,6 +338,273 @@ export default function PostDetailsPage() {
                 </>
               )}
             </Button>
+          </div>
+        )}
+
+        {/* Multi-Agent Pipeline Results */}
+        {multiAgentResult && (
+          <div className="space-y-6 mb-8">
+
+            {/* Header + top-level verdict */}
+            <div className="p-6 rounded-lg bg-card/50 border border-violet-500/20">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <Users className="h-5 w-5 text-violet-400" />
+                  <h3 className="text-lg font-bold text-foreground">Multi-Agent Analysis</h3>
+                  <Badge variant="outline" className={`font-code text-xs ${
+                    multiAgentResult.pipelineStatus === 'full' ? 'text-green-400 border-green-500/30' :
+                    multiAgentResult.pipelineStatus === 'partial' ? 'text-amber-400 border-amber-500/30' :
+                    'text-muted-foreground'
+                  }`}>
+                    {multiAgentResult.pipelineStatus}
+                  </Badge>
+                </div>
+                <div className={`flex items-center gap-1 px-3 py-1.5 rounded-full font-bold text-sm ${
+                  multiAgentResult.sentiment === 'BULLISH' ? 'bg-green-500/20 text-green-400' :
+                  multiAgentResult.sentiment === 'BEARISH' ? 'bg-red-500/20 text-red-400' :
+                  'bg-amber-500/20 text-amber-400'
+                }`}>
+                  {multiAgentResult.sentiment === 'BULLISH' && <ArrowUpRight className="h-4 w-4" />}
+                  {multiAgentResult.sentiment === 'BEARISH' && <ArrowDownRight className="h-4 w-4" />}
+                  {multiAgentResult.sentiment === 'NEUTRAL' && <Minus className="h-4 w-4" />}
+                  {multiAgentResult.sentiment}
+                </div>
+              </div>
+
+              <p className="text-foreground/80 mb-4">{multiAgentResult.summary}</p>
+              <p className="text-sm text-muted-foreground mb-4">{multiAgentResult.reasoning}</p>
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                <div className="p-3 rounded-lg bg-muted/20 text-center">
+                  <p className="text-xs text-muted-foreground mb-1">Risk Level</p>
+                  <p className={`font-bold font-code ${
+                    multiAgentResult.riskLevel === 'HIGH' ? 'text-red-400' :
+                    multiAgentResult.riskLevel === 'MEDIUM' ? 'text-amber-400' : 'text-green-400'
+                  }`}>{multiAgentResult.riskLevel}</p>
+                </div>
+                <div className="p-3 rounded-lg bg-muted/20 text-center">
+                  <p className="text-xs text-muted-foreground mb-1">Confidence</p>
+                  <p className="font-bold font-code">{(multiAgentResult.confidenceScore * 100).toFixed(0)}%</p>
+                </div>
+                <div className="p-3 rounded-lg bg-muted/20 text-center">
+                  <p className="text-xs text-muted-foreground mb-1">Sentiment Score</p>
+                  <p className="font-bold font-code">{multiAgentResult.sentimentScore.toFixed(2)}</p>
+                </div>
+                <div className="p-3 rounded-lg bg-muted/20 text-center">
+                  <p className="text-xs text-muted-foreground mb-1">Verified</p>
+                  <p className={`font-bold font-code ${multiAgentResult.security.verified ? 'text-green-400' : 'text-red-400'}`}>
+                    {multiAgentResult.security.verified ? 'YES' : 'NO'}
+                  </p>
+                </div>
+              </div>
+
+              {multiAgentResult.keyThemes.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {multiAgentResult.keyThemes.map((t, i) => (
+                    <Badge key={i} variant="secondary" className="text-xs">{t}</Badge>
+                  ))}
+                </div>
+              )}
+
+              <div className="mt-4 p-3 rounded-lg bg-amber-500/5 border border-amber-500/10">
+                <p className="text-xs font-semibold text-amber-400 mb-1">Recommendation</p>
+                <p className="text-sm text-foreground/80">{multiAgentResult.recommendation}</p>
+              </div>
+            </div>
+
+            {/* Agent Trace */}
+            <div className="p-6 rounded-lg bg-card/50 border border-border/20">
+              <h4 className="text-sm font-semibold text-muted-foreground mb-4 flex items-center gap-2">
+                <Brain className="h-4 w-4" /> Agent Trace
+              </h4>
+              <div className="space-y-3">
+
+                {/* Agent 1 */}
+                <div className="p-4 rounded-lg bg-blue-500/5 border border-blue-500/15">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-bold text-blue-400">Agent 1 — Sentiment (Gemini)</span>
+                    <div className="flex gap-2">
+                      <Badge variant="outline" className="text-xs font-code">{multiAgentResult.agentTrace.agent1.asset}</Badge>
+                      <Badge variant="outline" className="text-xs">{multiAgentResult.agentTrace.agent1.tweetType}</Badge>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3 mb-2 text-xs font-code">
+                    <div><span className="text-muted-foreground">Sentiment: </span>{multiAgentResult.agentTrace.agent1.sentimentScore.toFixed(2)}</div>
+                    <div><span className="text-muted-foreground">Relevance: </span>{(multiAgentResult.agentTrace.agent1.relevanceScore * 100).toFixed(0)}%</div>
+                    <div><span className="text-muted-foreground">Confidence: </span>{(multiAgentResult.agentTrace.agent1.confidence * 100).toFixed(0)}%</div>
+                  </div>
+                  {multiAgentResult.agentTrace.agent1.matchedKeywords.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {multiAgentResult.agentTrace.agent1.matchedKeywords.map((kw, i) => (
+                        <span key={i} className="text-xs px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-300 font-code">{kw}</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Agent 2 */}
+                <div className="p-4 rounded-lg bg-orange-500/5 border border-orange-500/15">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-bold text-orange-400">Agent 2 — Risk (OpenAI)</span>
+                    <Badge className={`text-xs ${
+                      multiAgentResult.agentTrace.agent2.riskLevel === 'HIGH' ? 'bg-red-500/20 text-red-400' :
+                      multiAgentResult.agentTrace.agent2.riskLevel === 'MEDIUM' ? 'bg-amber-500/20 text-amber-400' :
+                      'bg-green-500/20 text-green-400'
+                    }`}>{multiAgentResult.agentTrace.agent2.riskLevel}</Badge>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-xs font-code mb-2">
+                    <div><span className="text-muted-foreground">Confidence: </span>{(multiAgentResult.agentTrace.agent2.adjustedConfidence * 100).toFixed(0)}%</div>
+                    <div><span className="text-muted-foreground">Pump&Dump: </span>
+                      <span className={multiAgentResult.agentTrace.agent2.pumpAndDumpSignals ? 'text-red-400' : 'text-green-400'}>
+                        {multiAgentResult.agentTrace.agent2.pumpAndDumpSignals ? 'YES' : 'NO'}
+                      </span>
+                    </div>
+                    <div><span className="text-muted-foreground">Sarcasm: </span>{multiAgentResult.agentTrace.agent2.sarcasmDetected ? 'YES' : 'NO'}</div>
+                    <div><span className="text-muted-foreground">Manipulation: </span>{multiAgentResult.agentTrace.agent2.emotionalManipulation ? 'YES' : 'NO'}</div>
+                  </div>
+                  {multiAgentResult.agentTrace.agent2.riskFlags.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {multiAgentResult.agentTrace.agent2.riskFlags.map((f, i) => (
+                        <span key={i} className="text-xs px-2 py-0.5 rounded-full bg-red-500/10 text-red-300 font-code">{f}</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Agent 3 */}
+                <div className={`p-4 rounded-lg border ${
+                  multiAgentResult.agentTrace.agent3.summary.startsWith('Analysis blocked')
+                    ? 'bg-red-500/5 border-red-500/15'
+                    : 'bg-green-500/5 border-green-500/15'
+                }`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className={`text-sm font-bold ${
+                      multiAgentResult.agentTrace.agent3.summary.startsWith('Analysis blocked') ? 'text-red-400' : 'text-green-400'
+                    }`}>
+                      Agent 3 — Explanation (Gemini)
+                      {multiAgentResult.agentTrace.agent3.summary.startsWith('Analysis blocked') && (
+                        <span className="ml-2 text-xs font-normal px-2 py-0.5 rounded-full bg-red-500/20">BLOCKED</span>
+                      )}
+                    </span>
+                  </div>
+                  <p className="text-xs text-foreground/80 mb-2">{multiAgentResult.agentTrace.agent3.summary}</p>
+                  <p className="text-xs text-muted-foreground mb-2">{multiAgentResult.agentTrace.agent3.reasoning}</p>
+                  {multiAgentResult.agentTrace.agent3.keySignals.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {multiAgentResult.agentTrace.agent3.keySignals.map((s, i) => (
+                        <span key={i} className="text-xs px-2 py-0.5 rounded-full bg-muted/30 text-muted-foreground font-code">{s}</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* ArmorIQ Security Block */}
+            <div className="p-6 rounded-lg bg-card/50 border border-border/20">
+              <div className="flex items-center justify-between mb-4">
+                <h4 className="text-sm font-semibold text-muted-foreground flex items-center gap-2">
+                  <Shield className="h-4 w-4 text-violet-400" /> ArmorIQ Security
+                </h4>
+                <div className="flex gap-2">
+                  <Badge className={`text-xs ${multiAgentResult.security.verified ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+                    {multiAgentResult.security.verified ? '✓ Verified' : '✗ Unverified'}
+                  </Badge>
+                  <Badge className={`text-xs ${
+                    multiAgentResult.security.confidenceLevel === 'high' ? 'bg-green-500/20 text-green-400' :
+                    multiAgentResult.security.confidenceLevel === 'medium' ? 'bg-amber-500/20 text-amber-400' :
+                    'bg-red-500/20 text-red-400'
+                  }`}>{multiAgentResult.security.confidenceLevel} confidence</Badge>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4 text-xs font-code">
+                <div className="p-2 rounded bg-muted/20">
+                  <p className="text-muted-foreground mb-1">Reasoning Score</p>
+                  <p className="font-bold">{multiAgentResult.security.reasoningScore.toFixed(2)}</p>
+                </div>
+                <div className="p-2 rounded bg-muted/20">
+                  <p className="text-muted-foreground mb-1">Hallucination</p>
+                  <p className={`font-bold ${multiAgentResult.security.hallucination ? 'text-red-400' : 'text-green-400'}`}>
+                    {multiAgentResult.security.hallucination ? 'YES' : 'NO'}
+                  </p>
+                </div>
+                <div className="p-2 rounded bg-muted/20">
+                  <p className="text-muted-foreground mb-1">Plan Validated</p>
+                  <p className={`font-bold ${multiAgentResult.security.planValidated ? 'text-green-400' : 'text-muted-foreground'}`}>
+                    {multiAgentResult.security.planValidated ? 'YES' : 'NO'}
+                  </p>
+                </div>
+                <div className="p-2 rounded bg-muted/20">
+                  <p className="text-muted-foreground mb-1">Degraded</p>
+                  <p className={`font-bold ${multiAgentResult.security.degraded ? 'text-amber-400' : 'text-green-400'}`}>
+                    {multiAgentResult.security.degraded ? 'YES' : 'NO'}
+                  </p>
+                </div>
+              </div>
+
+              {multiAgentResult.security.consistencyFlags.length > 0 && (
+                <div className="mb-4">
+                  <p className="text-xs text-muted-foreground mb-2">Consistency Flags</p>
+                  <div className="space-y-1">
+                    {multiAgentResult.security.consistencyFlags.map((f, i) => (
+                      <p key={i} className="text-xs text-amber-300 flex items-start gap-1">
+                        <span className="mt-0.5">⚠</span> {f}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Policy Decisions */}
+              {multiAgentResult.security.policyDecisions.length > 0 && (
+                <div className="mb-4">
+                  <p className="text-xs text-muted-foreground mb-2">Policy Decisions</p>
+                  <div className="space-y-1">
+                    {multiAgentResult.security.policyDecisions.map((pd, i) => (
+                      <div key={i} className="flex items-center justify-between text-xs font-code p-2 rounded bg-muted/10">
+                        <span>{pd.agentName}</span>
+                        <span className="text-muted-foreground flex-1 mx-3 truncate">{pd.reason}</span>
+                        <Badge className={`text-xs ${pd.decision === 'allowed' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+                          {pd.decision}
+                        </Badge>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Audit Trail */}
+              {multiAgentResult.security.auditTrail.length > 0 && (
+                <div>
+                  <p className="text-xs text-muted-foreground mb-2">Audit Trail</p>
+                  <div className="space-y-1 max-h-40 overflow-y-auto">
+                    {multiAgentResult.security.auditTrail.map((e, i) => (
+                      <div key={i} className="flex items-center justify-between text-xs font-code p-1.5 rounded bg-muted/10">
+                        <span className="text-foreground/70">{e.action}</span>
+                        <div className="flex items-center gap-2">
+                          <Badge className={`text-xs ${
+                            e.result === 'allowed' ? 'bg-green-500/20 text-green-400' :
+                            e.result === 'blocked' ? 'bg-red-500/20 text-red-400' :
+                            'bg-muted/30 text-muted-foreground'
+                          }`}>{e.result}</Badge>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {multiAgentResult.security.intentTokenId && (
+                <p className="text-xs text-muted-foreground mt-3 font-code truncate">
+                  Token: {multiAgentResult.security.intentTokenId}
+                </p>
+              )}
+
+              <time dateTime={multiAgentResult.analyzedAt} className="text-xs text-muted-foreground mt-2 block" suppressHydrationWarning>
+                Analyzed at: {new Date(multiAgentResult.analyzedAt).toLocaleString()}
+              </time>
+            </div>
           </div>
         )}
 

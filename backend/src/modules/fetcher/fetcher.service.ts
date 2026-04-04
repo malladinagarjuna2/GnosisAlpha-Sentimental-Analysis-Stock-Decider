@@ -15,7 +15,7 @@ import { PostSource, SocialPlatform } from '@prisma/client';
 import type { PostJobPayload } from '../../queue/payloads/post-job.payload';
 import type { SocialPost } from './social-fetcher.port';
 
-const POLL_INTERVAL_MS = 3000_000;
+const POLL_INTERVAL_MS = 30000_000;
 
 @Injectable()
 export class FetcherService implements OnModuleInit, OnModuleDestroy {

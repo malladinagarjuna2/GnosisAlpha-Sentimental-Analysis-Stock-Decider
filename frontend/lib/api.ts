@@ -8,6 +8,7 @@ import {
   Alert,
   SocialChannel,
   DeepAnalysis,
+  MultiAgentAnalysis,
   AuthResponse,
   InvestorProfile,
   BacktestResult,
@@ -75,6 +76,8 @@ export const sentimentAPI = {
 export const analysisAPI = {
   deep: (postId: string) =>
     api.post<DeepAnalysis>('/analysis/deep', { postId }),
+  multiAgent: (postId: string) =>
+    api.post<MultiAgentAnalysis>('/analysis/multi-agent', { postId }),
 };
 
 // Strategies
