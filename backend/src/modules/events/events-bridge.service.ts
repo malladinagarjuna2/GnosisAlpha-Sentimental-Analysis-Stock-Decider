@@ -22,7 +22,9 @@ export class EventsBridgeService implements OnModuleInit, OnModuleDestroy {
   constructor(private readonly config: ConfigService) {
     const host = this.config.get<string>('REDIS_HOST') ?? 'localhost';
     const port = this.config.get<number>('REDIS_PORT') ?? 6379;
-    this.publisher = new Redis({ host, port, maxRetriesPerRequest: null });
+    const password = this.config.get<string>('REDIS_PASSWORD');
+    const tls = this.config.get<string>('REDIS_TLS') === 'true' ? {} : undefined;
+    this.publisher = new Redis({ host, port, password, tls, maxRetriesPerRequest: null });
   }
 
   async onModuleInit() {
@@ -45,7 +47,9 @@ export class EventsBridgeService implements OnModuleInit, OnModuleDestroy {
 
     const host = this.config.get<string>('REDIS_HOST') ?? 'localhost';
     const port = this.config.get<number>('REDIS_PORT') ?? 6379;
-    this.subscriber = new Redis({ host, port, maxRetriesPerRequest: null });
+    const password = this.config.get<string>('REDIS_PASSWORD');
+    const tls = this.config.get<string>('REDIS_TLS') === 'true' ? {} : undefined;
+    this.subscriber = new Redis({ host, port, password, tls, maxRetriesPerRequest: null });
 
     this.handler = handler;
     this.subscriber.subscribe(CHANNEL);
