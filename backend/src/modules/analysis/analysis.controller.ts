@@ -16,6 +16,9 @@ export class AnalysisController {
    */
   @Post('deep')
   deepAnalysis(@Body() dto: DeepAnalysisDto) {
-    return this.analysisService.deepAnalyze(dto.postId);
+    if (dto.text) {
+      return this.analysisService.deepAnalyzeText(dto.text, dto.asset ?? 'UNKNOWN');
+    }
+    return this.analysisService.deepAnalyze(dto.postId!);
   }
 }

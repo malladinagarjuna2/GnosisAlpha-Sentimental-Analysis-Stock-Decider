@@ -1,7 +1,15 @@
-import { IsString, IsNotEmpty } from 'class-validator';
+import { IsString, IsOptional } from 'class-validator';
 
 export class DeepAnalysisDto {
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  postId: string;
+  postId?: string;
+
+  @IsOptional()
+  @IsString()
+  text?: string;
+
+  @IsOptional()
+  @IsString()
+  asset?: string;
 }

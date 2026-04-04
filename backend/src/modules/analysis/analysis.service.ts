@@ -1,137 +1,230 @@
 // src/modules/analysis/analysis.service.ts
-// STEP 10: On-demand LLM deep analysis — never runs automatically.
+// STEP 10: On-demand 3-agent multi-LLM deep analysis pipeline.
+// Pipeline: Agent1(Gemini) → Agent2(OpenAI) → Agent3(Gemini) → score in CODE
+// NEVER runs automatically — only triggered by POST /analysis/deep
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
-import OpenAI from 'openai';
+import { SentimentAgent } from './agents/sentiment.agent';
+import { RiskAgent } from './agents/risk.agent';
+import { ExplanationAgent } from './agents/explanation.agent';
+import { ArmorIQClient } from './armoriq/armoriq.client';
+import {
+  SentimentAgentResult,
+  RiskAgentResult,
+  ExplanationAgentResult,
+  DEFAULT_SENTIMENT_RESULT,
+  DEFAULT_RISK_RESULT,
+  AgentTrace,
+} from './agents/agent.interfaces';
+import type { ArmorIQVerification } from './armoriq/armoriq.client';
 
 export interface DeepAnalysisResult {
-  postId: string;
-  summary: string;
-  sentiment: string;
-  reasoning: string;
-  keyThemes: string[];
-  riskLevel: 'LOW' | 'MEDIUM' | 'HIGH';
-  recommendation: string;
-  analyzedAt: string;
+  // ── Core fields (unchanged from original) ────────────────────────────────
+  postId:          string;
+  summary:         string;
+  sentiment:       'BULLISH' | 'BEARISH' | 'NEUTRAL';
+  reasoning:       string;
+  keyThemes:       string[];
+  riskLevel:       'LOW' | 'MEDIUM' | 'HIGH' | 'UNKNOWN';
+  recommendation:  string;
+  analyzedAt:      string;
+  // ── Extended fields (new) ─────────────────────────────────────────────────
+  confidenceScore: number;         // 0–1, computed in code
+  sentimentScore:  number;         // -1–1, numeric
+  pipelineStatus:  'full' | 'partial' | 'mock';
+  agentTrace?:     AgentTrace;     // per-agent outputs for frontend transparency
+  security?:       ArmorIQVerification;
 }
 
 @Injectable()
 export class AnalysisService {
   private readonly logger = new Logger(AnalysisService.name);
-  private readonly openai: OpenAI | null;
 
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly config: ConfigService,
-  ) {
-    const apiKey = this.config.get<string>('OPENAI_API_KEY');
-    if (apiKey && apiKey !== 'your_openai_api_key') {
-      this.openai = new OpenAI({ apiKey });
-      this.logger.log('🤖 OpenAI client initialized');
-    } else {
-      this.openai = null;
-      this.logger.warn('⚠️  OpenAI API key not configured — LLM analysis will return mock results');
-    }
-  }
+    private readonly prisma:           PrismaService,
+    private readonly sentimentAgent:   SentimentAgent,
+    private readonly riskAgent:        RiskAgent,
+    private readonly explanationAgent: ExplanationAgent,
+    private readonly armoriq:          ArmorIQClient,
+  ) {}
 
   async deepAnalyze(postId: string): Promise<DeepAnalysisResult> {
-    // 1. Fetch post from DB
+    // 1. Fetch post — 404 if not found
     const post = await this.prisma.post.findUnique({ where: { id: postId } });
     if (!post) throw new NotFoundException(`Post [${postId}] not found`);
 
-    // 2. Fetch existing NLP result if available (for context)
+    // 2. Fetch existing NLP result for context enrichment
     const nlpResult = await this.prisma.sentimentResult.findUnique({ where: { postId } });
+    this.logger.log(`🔍 Deep analysis started for post [${postId}]`);
 
-    this.logger.log(`🔍 Deep analysis requested for post [${postId}]`);
+    let pipelineStatus: 'full' | 'partial' | 'mock' = 'full';
 
-    if (!this.openai) {
-      return this.mockAnalysis(postId, post.content);
+    // ── ArmorIQ: Capture plan upfront ─────────────────────────────────────
+    let intentTokenId: string | null = null;
+    if (this.armoriq.isAvailable()) {
+      intentTokenId = await this.armoriq.capturePlan([
+        { tool: 'sentiment_analysis', description: 'Classify sentiment, relevance, and asset for the post' },
+        { tool: 'risk_detection',     description: 'Detect sarcasm, manipulation, and pump-and-dump signals' },
+        { tool: 'explanation',        description: 'Generate human-readable summary and recommendation' },
+      ]);
     }
 
-    // 3. Build prompt
-    const prompt = this.buildPrompt(post.content, nlpResult);
-
-    // 4. Call OpenAI
-    const completion = await this.openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
-        {
-          role: 'system',
-          content:
-            'You are a financial sentiment analyst. Analyze social media posts about stocks and crypto. ' +
-            'Respond ONLY with valid JSON matching the requested schema.',
-        },
-        { role: 'user', content: prompt },
-      ],
-      temperature: 0.3,
-      max_tokens: 600,
-    });
-
-    const raw = completion.choices[0]?.message?.content ?? '{}';
-    this.logger.log(`✅ LLM analysis complete for post [${postId}]`);
-
-    return this.parseResponse(postId, raw);
-  }
-
-  private buildPrompt(content: string, nlpResult: any): string {
-    const nlpContext = nlpResult
-      ? `\nExisting NLP analysis: score=${nlpResult.sentimentScore?.toFixed(2)}, ` +
-        `impact=${nlpResult.impactScore}, category=${nlpResult.category}`
-      : '';
-
-    return (
-      `Analyze this financial social media post:${nlpContext}\n\n` +
-      `Post: "${content}"\n\n` +
-      `Respond with JSON:\n` +
-      `{\n` +
-      `  "summary": "1-2 sentence summary",\n` +
-      `  "sentiment": "BULLISH|BEARISH|NEUTRAL",\n` +
-      `  "reasoning": "why this sentiment",\n` +
-      `  "keyThemes": ["theme1", "theme2"],\n` +
-      `  "riskLevel": "LOW|MEDIUM|HIGH",\n` +
-      `  "recommendation": "brief action recommendation"\n` +
-      `}`
-    );
-  }
-
-  private parseResponse(postId: string, raw: string): DeepAnalysisResult {
+    // ── Agent 1: Sentiment + Relevance (Gemini) ───────────────────────────
+    let agent1: SentimentAgentResult;
     try {
-      const jsonMatch = raw.match(/\{[\s\S]*\}/);
-      const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : {};
-      return {
-        postId,
-        summary: parsed.summary ?? 'Unable to parse summary',
-        sentiment: parsed.sentiment ?? 'NEUTRAL',
-        reasoning: parsed.reasoning ?? '',
-        keyThemes: parsed.keyThemes ?? [],
-        riskLevel: parsed.riskLevel ?? 'MEDIUM',
-        recommendation: parsed.recommendation ?? '',
-        analyzedAt: new Date().toISOString(),
-      };
-    } catch {
-      this.logger.warn(`Failed to parse LLM response for post [${postId}]`);
-      return this.mockAnalysis(postId, raw);
+      agent1 = await this.sentimentAgent.analyze(post.content, nlpResult);
+    } catch (err) {
+      this.logger.warn(`Agent 1 exception: ${(err as Error).message}`);
+      agent1 = DEFAULT_SENTIMENT_RESULT;
+      pipelineStatus = 'partial';
     }
+
+    // ── Agent 2: Risk / Sarcasm (OpenAI) ─────────────────────────────────
+    let agent2: RiskAgentResult;
+    try {
+      agent2 = await this.riskAgent.analyze(post.content, agent1);
+    } catch (err) {
+      this.logger.warn(`Agent 2 exception: ${(err as Error).message}`);
+      agent2 = DEFAULT_RISK_RESULT(agent1.confidence);
+      pipelineStatus = 'partial';
+    }
+
+    // ── Agent 3: Explanation (Gemini) ─────────────────────────────────────
+    let agent3: ExplanationAgentResult;
+    try {
+      agent3 = await this.explanationAgent.analyze(post.content, agent1, agent2);
+    } catch (err) {
+      this.logger.warn(`Agent 3 exception: ${(err as Error).message}`);
+      agent3 = {
+        summary:        `${agent1.asset} post with ${agent1.sentimentScore > 0 ? 'bullish' : 'bearish'} signals.`,
+        reasoning:      agent2.riskFlags.join('. ') || 'No risk flags detected.',
+        keySignals:     [...agent1.matchedKeywords.slice(0, 2), ...agent2.riskFlags.slice(0, 2)],
+        recommendation: 'Monitor for confirmation before acting.',
+      };
+      pipelineStatus = 'partial';
+    }
+
+    // ── Final scoring in CODE (not LLM) ──────────────────────────────────
+    const result = this.computeFinalResult(postId, agent1, agent2, agent3, pipelineStatus);
+
+    // ── ArmorIQ: Build verification block ────────────────────────────────
+    if (intentTokenId) {
+      result.security = this.armoriq.buildVerification(intentTokenId, true);
+    } else {
+      result.security = this.armoriq.buildBypassVerification(!this.armoriq.isAvailable());
+    }
+
+    this.logger.log(
+      `✅ Deep analysis complete [${postId}] — ` +
+      `sentiment=${result.sentiment} confidence=${result.confidenceScore.toFixed(2)} ` +
+      `pipeline=${result.pipelineStatus} armoriq=${result.security?.verified ?? false}`,
+    );
+
+    return result;
   }
 
-  private mockAnalysis(postId: string, content: string): DeepAnalysisResult {
-    const lower = content.toLowerCase();
-    const bullishWords = ['bullish', 'moon', 'pump', 'rally', 'buy', 'up', 'rise'];
-    const bearishWords = ['bearish', 'dump', 'crash', 'sell', 'down', 'fall', 'drop'];
-    const bullCount = bullishWords.filter(w => lower.includes(w)).length;
-    const bearCount = bearishWords.filter(w => lower.includes(w)).length;
-    const sentiment = bullCount > bearCount ? 'BULLISH' : bearCount > bullCount ? 'BEARISH' : 'NEUTRAL';
+  async deepAnalyzeText(text: string, asset: string): Promise<DeepAnalysisResult> {
+    const fakePostId = `text-${Date.now()}`;
+    this.logger.log(`🔍 Deep analysis started for text [${asset}]`);
+
+    let pipelineStatus: 'full' | 'partial' | 'mock' = 'full';
+
+    let intentTokenId: string | null = null;
+    if (this.armoriq.isAvailable()) {
+      intentTokenId = await this.armoriq.capturePlan([
+        { tool: 'sentiment_analysis', description: 'Classify sentiment, relevance, and asset for the text' },
+        { tool: 'risk_detection',     description: 'Detect sarcasm, manipulation, and pump-and-dump signals' },
+        { tool: 'explanation',        description: 'Generate human-readable summary and recommendation' },
+      ]);
+    }
+
+    let agent1: SentimentAgentResult;
+    try {
+      agent1 = await this.sentimentAgent.analyze(text, null);
+    } catch (err) {
+      this.logger.warn(`Agent 1 exception: ${(err as Error).message}`);
+      agent1 = DEFAULT_SENTIMENT_RESULT;
+      pipelineStatus = 'partial';
+    }
+
+    let agent2: RiskAgentResult;
+    try {
+      agent2 = await this.riskAgent.analyze(text, agent1);
+    } catch (err) {
+      this.logger.warn(`Agent 2 exception: ${(err as Error).message}`);
+      agent2 = DEFAULT_RISK_RESULT(agent1.confidence);
+      pipelineStatus = 'partial';
+    }
+
+    let agent3: ExplanationAgentResult;
+    try {
+      agent3 = await this.explanationAgent.analyze(text, agent1, agent2);
+    } catch (err) {
+      this.logger.warn(`Agent 3 exception: ${(err as Error).message}`);
+      agent3 = {
+        summary:        `${asset} post with ${agent1.sentimentScore > 0 ? 'bullish' : 'bearish'} signals.`,
+        reasoning:      agent2.riskFlags.join('. ') || 'No risk flags detected.',
+        keySignals:     [...agent1.matchedKeywords.slice(0, 2), ...agent2.riskFlags.slice(0, 2)],
+        recommendation: 'Monitor for confirmation before acting.',
+      };
+      pipelineStatus = 'partial';
+    }
+
+    const result = this.computeFinalResult(fakePostId, agent1, agent2, agent3, pipelineStatus);
+
+    if (intentTokenId) {
+      result.security = this.armoriq.buildVerification(intentTokenId, true);
+    } else {
+      result.security = this.armoriq.buildBypassVerification(!this.armoriq.isAvailable());
+    }
+
+    this.logger.log(`✅ Deep analysis complete [text/${asset}] — sentiment=${result.sentiment} pipeline=${result.pipelineStatus}`);
+    return result;
+  }
+
+  // ─── Final scoring formula — all in code, no LLM ─────────────────────────
+
+  private computeFinalResult(
+    postId:         string,
+    agent1:         SentimentAgentResult,
+    agent2:         RiskAgentResult,
+    agent3:         ExplanationAgentResult,
+    pipelineStatus: 'full' | 'partial' | 'mock',
+  ): DeepAnalysisResult {
+    // Sentiment label from Agent 1's numeric score
+    const sentiment: 'BULLISH' | 'BEARISH' | 'NEUTRAL' =
+      agent1.sentimentScore > 0.15 ? 'BULLISH' :
+      agent1.sentimentScore < -0.15 ? 'BEARISH' : 'NEUTRAL';
+
+    // Final confidence from Agent 2's adjusted value (already penalised for risk)
+    const confidenceScore = Math.round(agent2.adjustedConfidence * 100) / 100;
+
+    // Risk level from Agent 2
+    const riskLevel = agent2.riskLevel;
+
+    // Key themes: top Agent 1 keywords + Agent 2 risk flags (deduped, max 5)
+    const keyThemes = [...new Set([
+      ...agent1.matchedKeywords.slice(0, 3),
+      ...agent2.riskFlags.slice(0, 2),
+    ])].slice(0, 5);
+
+    // Mark as mock if both agents used defaults (very low confidence)
+    const effectiveStatus: 'full' | 'partial' | 'mock' =
+      pipelineStatus === 'partial' && confidenceScore < 0.25 ? 'mock' : pipelineStatus;
 
     return {
       postId,
-      summary: `Market post detected with ${sentiment.toLowerCase()} signals. OpenAI not configured — using mock analysis.`,
+      summary:         agent3.summary,
       sentiment,
-      reasoning: 'Mock analysis based on keyword presence. Configure OPENAI_API_KEY for real LLM analysis.',
-      keyThemes: ['market sentiment', 'social signal'],
-      riskLevel: 'MEDIUM',
-      recommendation: 'Configure OPENAI_API_KEY in .env for detailed LLM-powered analysis.',
-      analyzedAt: new Date().toISOString(),
+      reasoning:       agent3.reasoning,
+      keyThemes,
+      riskLevel,
+      recommendation:  agent3.recommendation,
+      analyzedAt:      new Date().toISOString(),
+      confidenceScore,
+      sentimentScore:  Math.round(agent1.sentimentScore * 100) / 100,
+      pipelineStatus:  effectiveStatus,
+      agentTrace: { agent1, agent2, agent3 },
     };
   }
 }
