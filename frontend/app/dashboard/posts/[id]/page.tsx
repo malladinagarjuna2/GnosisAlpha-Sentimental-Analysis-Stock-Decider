@@ -100,9 +100,13 @@ export default function PostDetailsPage() {
                 </Badge>
               )}
 
-              <p className="text-sm text-muted-foreground">
+              <time
+                dateTime={post.postedAt}
+                className="text-sm text-muted-foreground"
+                suppressHydrationWarning
+              >
                 Posted: {new Date(post.postedAt).toLocaleString()}
-              </p>
+              </time>
             </div>
 
             {sentiment && (
@@ -239,9 +243,13 @@ export default function PostDetailsPage() {
               <p className="text-foreground/80">{analysis.recommendation}</p>
             </div>
 
-            <p className="text-xs text-muted-foreground pt-4 border-t border-border/20">
+            <time
+              dateTime={analysis.analyzedAt}
+              className="text-xs text-muted-foreground pt-4 border-t border-border/20 block"
+              suppressHydrationWarning
+            >
               Analyzed at: {new Date(analysis.analyzedAt).toLocaleString()}
-            </p>
+            </time>
           </div>
         )}
       </Card>

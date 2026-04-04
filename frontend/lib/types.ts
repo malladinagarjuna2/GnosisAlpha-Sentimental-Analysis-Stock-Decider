@@ -117,3 +117,81 @@ export interface AuthResponse {
   accessToken: string;
   user?: User;
 }
+
+// ─── New types: Multi-Agent Architecture ────────────────────────────────────
+
+export type InvestHorizon = 'SHORT_TERM' | 'MEDIUM_TERM' | 'LONG_TERM';
+export type AgentType = 'SENTIMENT' | 'ANALYSIS' | 'TRADING_ALGO';
+
+export interface InvestorProfile {
+  id: string;
+  userId: string;
+  riskTolerance: number;
+  horizon: InvestHorizon;
+  capitalAmount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BacktestSignal {
+  date: string;
+  asset: string;
+  action: 'BUY' | 'SELL';
+  sentimentScore: number;
+  trigger: string;
+  source: string;
+  trustScore: number;
+  priceAtSignal: number;
+}
+
+export interface BacktestPerformance {
+  projectedGainINR: number;
+  projectedGainPct: number;
+  winRate: string;
+  totalTrades: number;
+  profitableTrades: number;
+  bestTrade: { asset: string; gainPct: number } | null;
+  worstTrade: { asset: string; gainPct: number } | null;
+}
+
+export interface BacktestResult {
+  strategyName: string;
+  period: { from: string; to: string };
+  assets: string[];
+  capitalINR: number;
+  totalTweetsAnalyzed: number;
+  trustedSourcesUsed: string[];
+  signals: BacktestSignal[];
+  performance: BacktestPerformance;
+  recommendation: string;
+  priceDataProvider: string;
+  tradeExecutor: string;
+}
+
+export interface AgentInfo {
+  name: string;
+  type: AgentType;
+  version: string;
+  healthy: boolean;
+}
+
+export interface AgentsResponse {
+  agents: AgentInfo[];
+  total: number;
+  healthy: number;
+  broker: {
+    provider: string;
+    isLive: boolean;
+    note: string;
+  };
+}
+
+export interface GeneratedStrategy {
+  name: string;
+  description: string;
+  riskLevel: 'LOW' | 'MEDIUM' | 'HIGH';
+  estimatedWinRate: string;
+  rationale: string;
+  agentsUsed: string[];
+  config: Strategy;
+}
