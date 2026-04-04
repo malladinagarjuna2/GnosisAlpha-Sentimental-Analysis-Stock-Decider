@@ -84,6 +84,8 @@ export const strategiesAPI = {
     api.post<Strategy>('/strategies/strategy/update', data),
   generate: (assets: string[]) =>
     api.post<GeneratedStrategy[]>('/strategies/generate', { assets }),
+  generateFromPost: (postId: string, analysis: DeepAnalysis) =>
+    api.post<GeneratedStrategy[]>('/strategies/generate-from-post', { postId, analysis }),
 };
 
 // Alerts

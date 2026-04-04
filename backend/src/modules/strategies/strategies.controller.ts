@@ -32,6 +32,29 @@ export class StrategiesController {
     return this.generatorService.generate(user.userId, body.assets ?? []);
   }
 
+  /**
+   * POST /api/strategies/generate-from-post
+   * Generate 3 strategies based on a specific post's deep analysis result.
+   * Body: { postId, analysis: { summary, sentiment, reasoning, keyThemes, riskLevel, recommendation } }
+   */
+  @Post('generate-from-post')
+  generateFromPost(
+    @GetUser() user: AuthUser,
+    @Body() body: {
+      postId: string;
+      analysis: {
+        summary: string;
+        sentiment: string;
+        reasoning: string;
+        keyThemes: string[];
+        riskLevel: string;
+        recommendation: string;
+      };
+    },
+  ) {
+    return this.generatorService.generateFromPost(user.userId, body.postId, body.analysis);
+  }
+
   // ─── Step 8 spec endpoints ──────────────────────────────────────────────────
 
   /** GET /api/strategies/strategy — get user's active strategy config */
