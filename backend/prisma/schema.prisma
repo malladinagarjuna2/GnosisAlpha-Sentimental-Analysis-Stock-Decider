@@ -25,6 +25,20 @@ model User {
   alerts          Alert[]
   userChannels    UserChannel[]
   customChannels  SocialChannel[]   @relation("CreatedByUser")
+  investorProfile InvestorProfile?
+}
+
+// ─── InvestorProfile (onboarding: risk, horizon, capital) ───────────────────
+model InvestorProfile {
+  id              String            @id @default(uuid())
+  userId          String            @unique
+  riskTolerance   Int               // 1 (conservative) to 10 (aggressive)
+  horizon         InvestHorizon
+  capitalAmount   Float             // in INR
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 // ─── Asset ─────────────────────────────────────────────────────────────────────
@@ -119,9 +133,10 @@ model Alert {
 model SocialChannel {
   id              String            @id @default(uuid())
   platform        SocialPlatform
-  handle          String            // e.g. "elonmusk", "r/Bitcoin"
-  displayName     String?           // e.g. "Elon Musk"
+  handle          String            // e.g. "CNBCTV18Live", "livemint"
+  displayName     String?           // e.g. "CNBC-TV18"
   isDefault       Boolean           @default(false)
+  trustScore      Float             @default(0.5)  // 0–1, higher = more trusted news source
   createdByUserId String?           // null = system default
   createdAt       DateTime          @default(now())
 
@@ -175,4 +190,10 @@ enum AnalysisMethod {
 enum AlertType {
   EMAIL
   IN_APP
+}
+
+enum InvestHorizon {
+  SHORT_TERM    // < 1 week
+  MEDIUM_TERM   // 1 week - 1 month
+  LONG_TERM     // > 1 month
 }

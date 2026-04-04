@@ -151,9 +151,13 @@ function AlertItem({ alert }: { alert: any }) {
             </div>
           </div>
 
-          <p className="text-xs text-muted-foreground">
+          <time
+            dateTime={alert.createdAt}
+            className="text-xs text-muted-foreground"
+            suppressHydrationWarning
+          >
             {new Date(alert.createdAt).toLocaleString()}
-          </p>
+          </time>
         </div>
       </div>
     </div>

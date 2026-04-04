@@ -8,7 +8,7 @@ class APIClient {
   constructor() {
     this.client = axios.create({
       baseURL: API_URL,
-      timeout: 10000,
+      timeout: 30000,
       headers: {
         'Content-Type': 'application/json',
       },
@@ -23,12 +23,16 @@ class APIClient {
       return config;
     });
 
-    // Handle errors
+    // Handle errors — only redirect on 401 for auth-related endpoints
     this.client.interceptors.response.use(
       (response) => response,
       (error: AxiosError) => {
         if (error.response?.status === 401) {
-          if (typeof window !== 'undefined') {
+          const url = error.config?.url ?? '';
+          // Only clear token and redirect for core auth endpoints (login check / me)
+          // Don't nuke the session for random 401s on feature endpoints
+          const isAuthCheck = url.includes('/users/me') || url.includes('/auth/');
+          if (isAuthCheck && typeof window !== 'undefined') {
             localStorage.removeItem('auth_token');
             window.location.href = '/auth/login';
           }

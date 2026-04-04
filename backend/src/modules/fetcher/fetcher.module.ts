@@ -12,6 +12,6 @@ import { ChannelsModule } from '../channels/channels.module';
   imports: [ConfigModule, ChannelsModule],
   providers:   [SeederService, TwitterFetcherAdapter, FetcherService],
   controllers: [FetcherController],
-  exports:     [FetcherService],
+  exports:     [FetcherService, TwitterFetcherAdapter],
 })
 export class FetcherModule {}

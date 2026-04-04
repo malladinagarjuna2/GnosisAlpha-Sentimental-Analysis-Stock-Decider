@@ -9,6 +9,11 @@ import {
   SocialChannel,
   DeepAnalysis,
   AuthResponse,
+  InvestorProfile,
+  BacktestResult,
+  AgentsResponse,
+  GeneratedStrategy,
+  InvestHorizon,
 } from './types';
 
 const api = apiClient.instance;
@@ -77,6 +82,10 @@ export const strategiesAPI = {
   get: () => api.get<Strategy>('/strategies/strategy'),
   update: (data: Partial<Strategy>) =>
     api.post<Strategy>('/strategies/strategy/update', data),
+  generate: (assets: string[]) =>
+    api.post<GeneratedStrategy[]>('/strategies/generate', { assets }),
+  generateFromPost: (postId: string, analysis: DeepAnalysis) =>
+    api.post<GeneratedStrategy[]>('/strategies/generate-from-post', { postId, analysis }),
 };
 
 // Alerts
@@ -101,6 +110,29 @@ export const channelsAPI = {
       handle,
       displayName,
     }),
+  recommended: (assets: string[]) =>
+    api.get<{ assets: string[]; recommended: SocialChannel[]; note: string }>(
+      '/channels/recommended',
+      { params: { assets: assets.join(',') } }
+    ),
+};
+
+// Investor Profile
+export const profileAPI = {
+  get: () => api.get<InvestorProfile>('/profile'),
+  upsert: (data: { riskTolerance: number; horizon: InvestHorizon; capitalAmount: number }) =>
+    api.post<InvestorProfile>('/profile', data),
+};
+
+// Backtest
+export const backtestAPI = {
+  run: (data: { assets: string[]; lookbackDays?: number; capitalAmount?: number }) =>
+    api.post<BacktestResult>('/backtest', data),
+};
+
+// Agents
+export const agentsAPI = {
+  list: () => api.get<AgentsResponse>('/agents'),
 };
 
 // Health

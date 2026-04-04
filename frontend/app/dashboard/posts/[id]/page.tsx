@@ -3,18 +3,18 @@
 import { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useFetch } from '@/hooks/useFetch';
-import { postsAPI, analysisAPI } from '@/lib/api';
+import { postsAPI, analysisAPI, strategiesAPI } from '@/lib/api';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
-import { useToast } from '@/hooks/use-toast';
-import { ArrowLeft, ThumbsUp, ThumbsDown, Zap, ExternalLink } from 'lucide-react';
+import { toast } from 'sonner';
+import { ArrowLeft, ThumbsUp, ThumbsDown, Zap, ExternalLink, Sparkles, Shield, Scale, Flame, CheckCircle2 } from 'lucide-react';
+import type { GeneratedStrategy } from '@/lib/types';
 
 export default function PostDetailsPage() {
   const params = useParams();
   const router = useRouter();
-  const { toast } = useToast();
   const postId = params.id as string;
 
   const { data: post, loading: postLoading } = useFetch(
@@ -25,24 +25,61 @@ export default function PostDetailsPage() {
   const [analysis, setAnalysis] = useState<any>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
 
+  const [strategies, setStrategies] = useState<GeneratedStrategy[]>([]);
+  const [isGeneratingStrategies, setIsGeneratingStrategies] = useState(false);
+  const [appliedIndex, setAppliedIndex] = useState<number | null>(null);
+
   const handleRunAnalysis = async () => {
     try {
       setIsAnalyzing(true);
       const response = await analysisAPI.deep(postId);
       setAnalysis(response.data);
-      toast({
-        title: 'Analysis Complete',
-        description: 'Deep analysis has been generated',
-      });
+      toast.success('Deep analysis has been generated');
     } catch (error) {
-      toast({
-        title: 'Analysis Failed',
-        description: 'Could not generate deep analysis',
-        variant: 'destructive',
-      });
+      console.error('Analysis failed:', error);
+      toast.error('Could not generate deep analysis');
     } finally {
       setIsAnalyzing(false);
     }
+  };
+
+  const handleGenerateStrategies = async () => {
+    if (!analysis) return;
+    setIsGeneratingStrategies(true);
+    setStrategies([]);
+    setAppliedIndex(null);
+    try {
+      const res = await strategiesAPI.generateFromPost(postId, analysis);
+      const data = Array.isArray(res.data) ? res.data : [];
+      if (data.length === 0) {
+        toast.error('No strategies were generated. Set up your investor profile first.');
+        return;
+      }
+      setStrategies(data);
+      toast.success(`${data.length} strategies generated from this analysis`);
+    } catch (err: any) {
+      console.error('Strategy generation failed:', err?.response?.data || err);
+      toast.error(err?.response?.data?.message || 'Could not generate strategies from this post');
+    } finally {
+      setIsGeneratingStrategies(false);
+    }
+  };
+
+  const handleApplyStrategy = async (strat: GeneratedStrategy, index: number) => {
+    try {
+      await strategiesAPI.update(strat.config);
+      setAppliedIndex(index);
+      toast.success(`"${strat.name}" is now your active strategy!`);
+    } catch {
+      toast.error('Could not apply strategy');
+    }
+  };
+
+  const RISK_ICONS: Record<string, React.ElementType> = { LOW: Shield, MEDIUM: Scale, HIGH: Flame };
+  const RISK_COLORS: Record<string, { text: string; bg: string; border: string }> = {
+    LOW:    { text: 'text-blue-400',  bg: 'bg-blue-500/10',  border: 'border-blue-500/20' },
+    MEDIUM: { text: 'text-amber-400', bg: 'bg-amber-500/10', border: 'border-amber-500/20' },
+    HIGH:   { text: 'text-red-400',   bg: 'bg-red-500/10',   border: 'border-red-500/20' },
   };
 
   if (postLoading) {
@@ -100,9 +137,13 @@ export default function PostDetailsPage() {
                 </Badge>
               )}
 
-              <p className="text-sm text-muted-foreground">
+              <time
+                dateTime={post.postedAt}
+                className="text-sm text-muted-foreground"
+                suppressHydrationWarning
+              >
                 Posted: {new Date(post.postedAt).toLocaleString()}
-              </p>
+              </time>
             </div>
 
             {sentiment && (
@@ -239,9 +280,112 @@ export default function PostDetailsPage() {
               <p className="text-foreground/80">{analysis.recommendation}</p>
             </div>
 
-            <p className="text-xs text-muted-foreground pt-4 border-t border-border/20">
+            <time
+              dateTime={analysis.analyzedAt}
+              className="text-xs text-muted-foreground pt-4 border-t border-border/20 block"
+              suppressHydrationWarning
+            >
               Analyzed at: {new Date(analysis.analyzedAt).toLocaleString()}
+            </time>
+
+            {/* Generate Strategy Button — appears after analysis */}
+            <Button
+              onClick={handleGenerateStrategies}
+              disabled={isGeneratingStrategies}
+              className="w-full mt-6 bg-violet-600 hover:bg-violet-700 text-white gap-2"
+              size="lg"
+            >
+              {isGeneratingStrategies ? (
+                <>
+                  <div className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  Generating Strategies...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="h-5 w-5" />
+                  Generate Strategy from This Analysis
+                </>
+              )}
+            </Button>
+          </div>
+        )}
+
+        {/* Strategy Cards — shown after generation */}
+        {strategies.length > 0 && (
+          <div className="mt-8 space-y-4">
+            <h3 className="text-xl font-bold text-foreground flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-violet-400" />
+              AI-Generated Strategies
+            </h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              Based on this post&apos;s deep analysis and your investor profile
             </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {strategies.map((strat, i) => {
+                const RiskIcon = RISK_ICONS[strat.riskLevel] ?? Scale;
+                const colors = RISK_COLORS[strat.riskLevel] ?? RISK_COLORS.MEDIUM;
+                const isApplied = appliedIndex === i;
+
+                return (
+                  <Card
+                    key={i}
+                    className={`p-5 border-2 ${colors.border} bg-card/50 backdrop-blur-sm flex flex-col transition-all duration-200 hover:-translate-y-1 hover:shadow-lg`}
+                  >
+                    <div className="flex items-start justify-between mb-3">
+                      <div className={`p-2 rounded-xl ${colors.bg}`}>
+                        <RiskIcon className={`h-5 w-5 ${colors.text}`} />
+                      </div>
+                      <Badge variant="outline" className="font-code text-xs">
+                        Win: {strat.estimatedWinRate}
+                      </Badge>
+                    </div>
+
+                    <h4 className="text-base font-bold mb-1">{strat.name}</h4>
+                    <p className="text-xs text-muted-foreground mb-3 flex-1 leading-relaxed">
+                      {strat.description}
+                    </p>
+
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full w-fit mb-2 ${colors.bg} ${colors.text}`}>
+                      {strat.riskLevel} RISK
+                    </span>
+
+                    <p className="text-xs text-muted-foreground leading-relaxed mb-3">
+                      {strat.rationale}
+                    </p>
+
+                    <div className="mt-auto pt-3 border-t border-border/10 space-y-1 font-code text-xs text-muted-foreground">
+                      <div className="flex justify-between">
+                        <span>Sentiment</span>
+                        <span className="text-foreground">{strat.config?.sentimentThreshold ?? '—'}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Impact</span>
+                        <span className="text-foreground">{strat.config?.impactThreshold ?? '—'}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Confidence</span>
+                        <span className="text-foreground">{strat.config?.confidenceThreshold ?? '—'}</span>
+                      </div>
+                    </div>
+
+                    <Button
+                      variant={isApplied ? 'default' : 'outline'}
+                      className="mt-3 w-full gap-2"
+                      size="sm"
+                      onClick={() => handleApplyStrategy(strat, i)}
+                      disabled={isApplied}
+                    >
+                      {isApplied ? (
+                        <><CheckCircle2 className="h-4 w-4" /> Applied</>
+                      ) : (
+                        <><Zap className="h-4 w-4" /> Apply Strategy</>
+                      )}
+                    </Button>
+                  </Card>
+                );
+              })}
+            </div>
           </div>
         )}
       </Card>
