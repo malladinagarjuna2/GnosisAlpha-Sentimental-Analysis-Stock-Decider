@@ -27,6 +27,9 @@ import { PreferencesModule } from './modules/preferences/preferences.module';
 import { AnalysisModule }   from './modules/analysis/analysis.module';
 import { ChannelsModule }   from './modules/channels/channels.module';
 import { EventsModule }     from './modules/events/events.module';
+import { ProfileModule }    from './modules/profile/profile.module';
+import { BacktestModule }   from './modules/backtest/backtest.module';
+import { AgentsModule }     from './modules/agents/agents.module';
 
 @Module({
   imports: [
@@ -50,6 +53,9 @@ import { EventsModule }     from './modules/events/events.module';
     AnalysisModule,
     ChannelsModule,
     EventsModule,
+    ProfileModule,     // investor onboarding: risk, horizon, capital
+    BacktestModule,    // 7-day backtest engine with trade simulation
+    AgentsModule,      // multi-agent orchestrator (NLP now, LLM/algo/multi later)
   ],
   controllers: [AppController],
   providers: [

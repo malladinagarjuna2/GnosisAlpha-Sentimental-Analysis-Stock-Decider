@@ -5,6 +5,7 @@ import {
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { GetUser, AuthUser } from '../../common/decorators/get-user.decorator';
 import { StrategiesService, DEFAULT_STRATEGY_CONFIG } from './strategies.service';
+import { StrategyGeneratorService } from './strategy-generator.service';
 import { CreateStrategyDto } from './dto/create-strategy.dto';
 import { UpdateStrategyDto } from './dto/update-strategy.dto';
 import { UpdateStrategyConfigDto } from './dto/update-strategy-config.dto';
@@ -13,7 +14,23 @@ import type { StrategyConfig } from './dto/strategy-config.interface';
 @Controller('strategies')
 @UseGuards(JwtAuthGuard)
 export class StrategiesController {
-  constructor(private readonly strategiesService: StrategiesService) {}
+  constructor(
+    private readonly strategiesService: StrategiesService,
+    private readonly generatorService: StrategyGeneratorService,
+  ) {}
+
+  // ─── AI Strategy Generator ───────────────────────────────────────────────────
+
+  /**
+   * POST /api/strategies/generate
+   * Generate 3 personalized strategies (Conservative/Balanced/Aggressive)
+   * based on user's InvestorProfile + recent sentiment data.
+   * Body: { "assets": ["RELIANCE", "TCS"] }
+   */
+  @Post('generate')
+  generate(@GetUser() user: AuthUser, @Body() body: { assets: string[] }) {
+    return this.generatorService.generate(user.userId, body.assets ?? []);
+  }
 
   // ─── Step 8 spec endpoints ──────────────────────────────────────────────────
 
@@ -26,7 +43,6 @@ export class StrategiesController {
   /** POST /api/strategies/strategy/update — create or update user's active strategy */
   @Post('strategy/update')
   updateStrategy(@GetUser() user: AuthUser, @Body() dto: UpdateStrategyConfigDto) {
-    // Merge with defaults so partial updates work
     const config: StrategyConfig = {
       ...DEFAULT_STRATEGY_CONFIG,
       ...dto,

@@ -4,7 +4,7 @@ import { useFetch } from '@/hooks/useFetch';
 import { alertsAPI } from '@/lib/api';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Alert as AlertIcon, AlertTriangle } from 'lucide-react';
+import { AlertCircle as AlertIcon, AlertTriangle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 
 export default function AlertsPage() {
@@ -151,9 +151,13 @@ function AlertItem({ alert }: { alert: any }) {
             </div>
           </div>
 
-          <p className="text-xs text-muted-foreground">
+          <time
+            dateTime={alert.createdAt}
+            className="text-xs text-muted-foreground"
+            suppressHydrationWarning
+          >
             {new Date(alert.createdAt).toLocaleString()}
-          </p>
+          </time>
         </div>
       </div>
     </div>

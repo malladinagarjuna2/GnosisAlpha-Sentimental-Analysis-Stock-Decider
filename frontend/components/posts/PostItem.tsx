@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import Link from 'next/link';
 import { Post } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
@@ -42,9 +41,15 @@ export const PostItem = ({ post }: { post: Post }) => {
               {post.content}
             </p>
 
-            <p className="text-xs text-muted-foreground">
+            {/* suppressHydrationWarning: toLocaleString() output differs between
+                server locale and browser locale */}
+            <time
+              dateTime={post.postedAt}
+              className="text-xs text-muted-foreground"
+              suppressHydrationWarning
+            >
               {new Date(post.postedAt).toLocaleString()}
-            </p>
+            </time>
           </div>
 
           {sentiment && (
@@ -100,20 +105,20 @@ export const PostItem = ({ post }: { post: Post }) => {
           </div>
         )}
 
-        {/* Actions */}
+        {/* Actions — use asChild so Button renders as <a>/<Link>,
+            avoiding invalid <button> inside <a> nesting */}
         <div className="flex items-center gap-2 pt-2">
-          <Link href={`/dashboard/posts/${post.id}`}>
-            <Button variant="outline" size="sm" className="text-xs">
-              View Details
-            </Button>
-          </Link>
+          <Button variant="outline" size="sm" className="text-xs" asChild>
+            <Link href={`/dashboard/posts/${post.id}`}>View Details</Link>
+          </Button>
+
           {post.url && (
-            <a href={post.url} target="_blank" rel="noopener noreferrer">
-              <Button variant="ghost" size="sm" className="text-xs">
+            <Button variant="ghost" size="sm" className="text-xs" asChild>
+              <a href={post.url} target="_blank" rel="noopener noreferrer">
                 <ExternalLink className="h-3 w-3 mr-1" />
                 Source
-              </Button>
-            </a>
+              </a>
+            </Button>
           )}
         </div>
       </div>
