@@ -35,6 +35,7 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   get alert()           { return this.prismaClient.alert; }
   get socialChannel()   { return this.prismaClient.socialChannel; }
   get userChannel()     { return this.prismaClient.userChannel; }
+  get investorProfile() { return this.prismaClient.investorProfile; }
 
   get $transaction()    { return this.prismaClient.$transaction.bind(this.prismaClient); }
 

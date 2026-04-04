@@ -15,7 +15,7 @@ import { PostSource, SocialPlatform } from '@prisma/client';
 import type { PostJobPayload } from '../../queue/payloads/post-job.payload';
 import type { SocialPost } from './social-fetcher.port';
 
-const POLL_INTERVAL_MS = 30_000;
+const POLL_INTERVAL_MS = 300_000;
 
 @Injectable()
 export class FetcherService implements OnModuleInit, OnModuleDestroy {
@@ -188,13 +188,18 @@ export class FetcherService implements OnModuleInit, OnModuleDestroy {
   ): { id: string; symbol: string } | null {
     const lower = content.toLowerCase();
 
-    // Asset keyword mappings (extensible)
+    // NSE/BSE stock keyword mappings (extensible)
     const ASSET_KEYWORDS: Record<string, string[]> = {
-      BTC:  ['bitcoin', 'btc', '$btc'],
-      ETH:  ['ethereum', 'eth', '$eth'],
-      SOL:  ['solana', 'sol', '$sol'],
-      TSLA: ['tesla', 'tsla', '$tsla'],
-      AAPL: ['apple', 'aapl', '$aapl'],
+      RELIANCE:   ['reliance', 'ril', '$reliance', 'jio', 'mukesh ambani'],
+      TCS:        ['tcs', 'tata consultancy', '$tcs'],
+      INFY:       ['infosys', 'infy', '$infy', 'narayana murthy'],
+      HDFCBANK:   ['hdfc bank', 'hdfcbank', '$hdfcbank', 'hdfc'],
+      ICICIBANK:  ['icici bank', 'icicibank', '$icicibank', 'icici'],
+      SBIN:       ['sbi', 'sbin', '$sbin', 'state bank'],
+      WIPRO:      ['wipro', '$wipro'],
+      TATAMOTORS: ['tata motors', 'tatamotors', '$tatamotors', 'tata ev', 'jlr', 'nexon'],
+      BAJFINANCE: ['bajaj finance', 'bajfinance', '$bajfinance'],
+      LT:         ['larsen', 'l&t', '$lt', 'larsen toubro'],
     };
 
     for (const asset of assets) {
