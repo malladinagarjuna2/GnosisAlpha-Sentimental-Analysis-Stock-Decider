@@ -81,7 +81,10 @@ export const Sidebar = () => {
 
   const renderLink = (item: { label: string; href: string; icon: any; badge?: string }) => {
     const Icon = item.icon;
-    const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
+    const isActive =
+      item.href === '/dashboard'
+        ? pathname === '/dashboard'
+        : pathname === item.href || pathname.startsWith(item.href + '/');
 
     return (
       <Link

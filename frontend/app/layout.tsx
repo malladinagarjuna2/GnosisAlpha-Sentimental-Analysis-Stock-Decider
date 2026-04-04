@@ -1,12 +1,15 @@
 import type { Metadata } from 'next'
-import { Geist, Geist_Mono } from 'next/font/google'
+import { Fira_Code } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { Toaster } from '@/components/ui/sonner'
 import { SocketProvider } from '@/components/SocketProvider'
 import './globals.css'
 
-const _geist = Geist({ subsets: ["latin"] });
-const _geistMono = Geist_Mono({ subsets: ["latin"] });
+const firaCode = Fira_Code({
+  subsets: ['latin'],
+  variable: '--font-fira-code',
+  display: 'swap',
+});
 
 export const metadata: Metadata = {
   title: 'Market Sentiment Intelligence Dashboard',
@@ -37,8 +40,8 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" className="dark">
-      <body className="font-sans antialiased bg-background text-foreground">
+    <html lang="en" className={`dark ${firaCode.variable}`}>
+      <body className={`${firaCode.className} antialiased bg-background text-foreground`}>
         <SocketProvider>
           {children}
         </SocketProvider>
