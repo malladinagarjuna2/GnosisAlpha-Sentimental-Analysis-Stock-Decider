@@ -70,21 +70,26 @@ export class ZerodhaService {
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
   ) {
-    const apiKey     = this.config.get<string>('KITE_API_KEY') ?? '';
-    const accessToken = this.config.get<string>('KITE_ACCESS_TOKEN') ?? '';
-
-    this.isConfigured = !!(apiKey && accessToken);
-
     this.kite = axios.create({
       baseURL: KITE_BASE,
-      headers: {
-        'X-Kite-Version': '3',
-        ...(this.isConfigured
-          ? { Authorization: `token ${apiKey}:${accessToken}` }
-          : {}),
-      },
       timeout: 15000,
     });
+
+    // Inject auth header dynamically on every request so token updates
+    // in .env take effect without restarting the server.
+    this.kite.interceptors.request.use((cfg) => {
+      const apiKey      = process.env.KITE_API_KEY ?? '';
+      const accessToken = process.env.KITE_ACCESS_TOKEN ?? '';
+      cfg.headers['X-Kite-Version'] = '3';
+      if (apiKey && accessToken) {
+        cfg.headers['Authorization'] = `token ${apiKey}:${accessToken}`;
+      }
+      return cfg;
+    });
+
+    this.isConfigured = !!(
+      this.config.get('KITE_API_KEY') && this.config.get('KITE_ACCESS_TOKEN')
+    );
 
     if (this.isConfigured) {
       this.logger.log('📈 Zerodha Kite client initialized');
@@ -94,7 +99,9 @@ export class ZerodhaService {
   }
 
   private assertConfigured() {
-    if (!this.isConfigured) {
+    const apiKey      = process.env.KITE_API_KEY;
+    const accessToken = process.env.KITE_ACCESS_TOKEN;
+    if (!apiKey || !accessToken) {
       throw new ServiceUnavailableException(
         'Zerodha not connected. Add KITE_API_KEY and KITE_ACCESS_TOKEN to .env',
       );
