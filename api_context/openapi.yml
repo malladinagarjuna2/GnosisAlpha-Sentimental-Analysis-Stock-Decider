@@ -39,8 +39,18 @@ tags:
     description: In-app and email alerts
   - name: Channels
     description: Social media channel management
+  - name: Fetcher
+    description: Manual fetch trigger and status (communicates with worker via BullMQ)
   - name: Whale
     description: Whale activity detection
+  - name: Profile
+    description: Investor onboarding — risk, horizon, capital
+  - name: Backtest
+    description: 7-day backtesting engine with trade simulation
+  - name: StrategyGen
+    description: AI-powered strategy generation
+  - name: Agents
+    description: Multi-agent registry and health status
   - name: Health
     description: Service health check
 
@@ -76,6 +86,10 @@ components:
     AlertType:
       type: string
       enum: [IN_APP, EMAIL]
+
+    InvestHorizon:
+      type: string
+      enum: [SHORT_TERM, MEDIUM_TERM, LONG_TERM]
 
     Asset:
       type: object
@@ -298,6 +312,32 @@ components:
           type: string
           format: date-time
 
+    InvestorProfile:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        riskTolerance:
+          type: integer
+          minimum: 1
+          maximum: 10
+          example: 7
+        horizon:
+          $ref: '#/components/schemas/InvestHorizon'
+        capitalAmount:
+          type: number
+          example: 100000
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
     DeepAnalysisResponse:
       type: object
       properties:
@@ -329,6 +369,36 @@ components:
         analyzedAt:
           type: string
           format: date-time
+
+    FetcherRefreshResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: triggered
+        jobId:
+          type: string
+          example: "42"
+        message:
+          type: string
+          example: "Fetch job dispatched to worker — new posts will appear in /api/posts within seconds"
+        requestedAt:
+          type: string
+          format: date-time
+
+    FetcherStatusResponse:
+      type: object
+      properties:
+        lastFetchedAt:
+          type: object
+          additionalProperties:
+            type: string
+            format: date-time
+          example:
+            R0_Kum: "2026-04-03T15:09:45.000Z"
+            elonmusk: "2026-04-03T15:09:46.000Z"
+        message:
+          type: string
 
     ErrorResponse:
       type: object
@@ -1302,6 +1372,53 @@ paths:
               schema:
                 $ref: '#/components/schemas/SocialChannel'
 
+  /api/fetcher/refresh:
+    post:
+      tags: [Fetcher]
+      summary: Trigger an immediate fetch cycle in the worker
+      description: |
+        Dispatches a `trigger-fetch` job to `fetcher-control-queue` (BullMQ).
+        The worker's `FetcherRefreshWorker` picks it up and calls `fetcherService.poll()` immediately.
+        Only fetches tweets **newer than `lastFetchedAt`** per channel — no duplicate ingestion.
+
+        **Flow:**
+        ```
+        POST /api/fetcher/refresh
+                │
+                ▼  enqueues job
+          fetcher-control-queue (BullMQ)
+                │
+                ▼  FetcherRefreshWorker
+          fetcherService.poll()  →  Twitter API  →  post-queue  →  PostWorker  →  ...
+        ```
+      operationId: fetcherRefresh
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Fetch job dispatched to worker
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FetcherRefreshResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/fetcher/status:
+    get:
+      tags: [Fetcher]
+      summary: Get last fetch time per channel (HTTP server process state)
+      operationId: fetcherStatus
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Last fetched timestamps per channel handle
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FetcherStatusResponse'
+
   /api/whale/check:
     post:
       tags: [Whale]
@@ -1349,3 +1466,256 @@ paths:
                   confidenceBoost:
                     type: number
                     example: 0.15
+
+  /api/profile:
+    post:
+      tags: [Profile]
+      summary: Create or update investor profile (onboarding)
+      operationId: upsertProfile
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [riskTolerance, horizon, capitalAmount]
+              properties:
+                riskTolerance:
+                  type: integer
+                  minimum: 1
+                  maximum: 10
+                  example: 7
+                horizon:
+                  $ref: '#/components/schemas/InvestHorizon'
+                capitalAmount:
+                  type: number
+                  example: 100000
+      responses:
+        '200':
+          description: Investor profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvestorProfile'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    get:
+      tags: [Profile]
+      summary: Get current investor profile
+      operationId: getProfile
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Investor profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvestorProfile'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/backtest:
+    post:
+      tags: [Backtest]
+      summary: Run 7-day backtest for NSE/BSE stocks
+      description: Scrapes trusted channels, runs NLP sentiment, fetches historical prices from Yahoo Finance, simulates trades, returns P&L.
+      operationId: runBacktest
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [assets]
+              properties:
+                assets:
+                  type: array
+                  items:
+                    type: string
+                  example: [RELIANCE, TCS]
+                lookbackDays:
+                  type: integer
+                  maximum: 7
+                  default: 7
+                capitalAmount:
+                  type: number
+                  example: 100000
+      responses:
+        '200':
+          description: Backtest result with P&L
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  strategyName:
+                    type: string
+                    example: Sentiment-Driven Backtest
+                  period:
+                    type: object
+                  assets:
+                    type: array
+                    items:
+                      type: string
+                  capitalINR:
+                    type: number
+                  totalTweetsAnalyzed:
+                    type: integer
+                  trustedSourcesUsed:
+                    type: array
+                    items:
+                      type: string
+                  signals:
+                    type: array
+                    items:
+                      type: object
+                  performance:
+                    type: object
+                  recommendation:
+                    type: string
+                  priceDataProvider:
+                    type: string
+                    example: Yahoo Finance
+                  tradeExecutor:
+                    type: string
+                    example: Mock (Paper Trading)
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/strategies/generate:
+    post:
+      tags: [StrategyGen]
+      summary: Generate 3 AI-powered strategies based on investor profile
+      description: Uses GPT-4o-mini. Falls back to rule-based if OpenAI not configured.
+      operationId: generateStrategies
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [assets]
+              properties:
+                assets:
+                  type: array
+                  items:
+                    type: string
+                  example: [RELIANCE, TCS]
+      responses:
+        '200':
+          description: Array of 3 generated strategies
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                      example: Conservative Guardian
+                    description:
+                      type: string
+                    riskLevel:
+                      type: string
+                      enum: [LOW, MEDIUM, HIGH]
+                    estimatedWinRate:
+                      type: string
+                      example: "72%"
+                    rationale:
+                      type: string
+                    config:
+                      $ref: '#/components/schemas/StrategyConfig'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/channels/recommended:
+    get:
+      tags: [Channels]
+      summary: Get recommended trusted channels for given assets
+      operationId: recommendedChannels
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: assets
+          in: query
+          required: true
+          schema:
+            type: string
+          example: RELIANCE,TCS
+      responses:
+        '200':
+          description: Recommended channels
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  assets:
+                    type: array
+                    items:
+                      type: string
+                  recommended:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SocialChannel'
+                  note:
+                    type: string
+
+  /api/agents:
+    get:
+      tags: [Agents]
+      summary: List registered AI agents with health status
+      description: Returns all registered agents and their operational status. No auth required.
+      operationId: listAgents
+      responses:
+        '200':
+          description: Agent registry
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  agents:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                          example: NLP Sentiment Agent
+                        type:
+                          type: string
+                          enum: [SENTIMENT, ANALYSIS, TRADING_ALGO]
+                          example: SENTIMENT
+                        version:
+                          type: string
+                          example: 1.0.0
+                        healthy:
+                          type: boolean
+                          example: true
+                  total:
+                    type: integer
+                    example: 1
+                  healthy:
+                    type: integer
+                    example: 1
+                  broker:
+                    type: object
+                    properties:
+                      provider:
+                        type: string
+                        example: Mock (Paper Trading)
+                      isLive:
+                        type: boolean
+                        example: false
+                      note:
+                        type: string
+                        example: Swap to Kite/Alpaca by implementing BrokerPort

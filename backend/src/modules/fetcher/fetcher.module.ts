@@ -3,13 +3,15 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { FetcherService } from './fetcher.service';
+import { FetcherController } from './fetcher.controller';
 import { SeederService } from './seeder.service';
 import { TwitterFetcherAdapter } from './twitter-fetcher.adapter';
 import { ChannelsModule } from '../channels/channels.module';
 
 @Module({
   imports: [ConfigModule, ChannelsModule],
-  providers: [SeederService, TwitterFetcherAdapter, FetcherService],
-  exports: [FetcherService],
+  providers:   [SeederService, TwitterFetcherAdapter, FetcherService],
+  controllers: [FetcherController],
+  exports:     [FetcherService, TwitterFetcherAdapter],
 })
 export class FetcherModule {}

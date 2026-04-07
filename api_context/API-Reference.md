@@ -491,7 +491,259 @@ Manual whale detection check.
 
 ---
 
-## 12. Health Check
+## 13. Fetcher Control
+
+> **Architecture note:** The refresh endpoint communicates with the worker process via `fetcher-control-queue` (BullMQ/Redis) — same decoupled pattern as the rest of the pipeline.
+
+### POST `/api/fetcher/refresh` (Auth Required)
+Trigger an **immediate fetch cycle** in the worker process. Useful when you've just posted a tweet and want it ingested right away without waiting for the next 30s poll.
+
+The worker will only fetch tweets **newer than the last successful fetch** for each channel (`lastFetchedAt` tracking), so there's no risk of re-processing old posts.
+
+**Response:**
+```json
+{
+  "status": "triggered",
+  "jobId": "42",
+  "message": "Fetch job dispatched to worker — new posts will appear in /api/posts within seconds",
+  "requestedAt": "2026-04-03T15:10:00.000Z"
+}
+```
+
+**Flow after calling this endpoint:**
+```
+POST /api/fetcher/refresh
+        │
+        ▼  enqueues trigger-fetch job
+  fetcher-control-queue (Redis/BullMQ)
+        │
+        ▼  FetcherRefreshWorker picks it up
+  fetcherService.poll() → Twitter API (sinceHours = time since lastFetchedAt)
+        │
+        ▼  new posts flow through normal pipeline
+  post-queue → PostWorker → sentiment-queue → SentimentWorker → WebSocket events
+```
+
+---
+
+### GET `/api/fetcher/status` (Auth Required)
+Get the last successful fetch time per channel handle (from the HTTP server process state).
+
+**Response:**
+```json
+{
+  "lastFetchedAt": {
+    "R0_Kum": "2026-04-03T15:09:45.000Z",
+    "elonmusk": "2026-04-03T15:09:46.000Z"
+  },
+  "message": "lastFetchedAt reflects the HTTP server process — worker process tracks the live state"
+}
+```
+
+---
+
+## 14. Investor Profile (Onboarding)
+
+### POST `/api/profile` (Auth Required)
+Create or update the user's investor profile. This is the **onboarding step** where the user sets their risk tolerance, investment horizon, and capital.
+
+**Request Body:**
+```json
+{
+  "riskTolerance": 7,
+  "horizon": "SHORT_TERM",
+  "capitalAmount": 100000
+}
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `riskTolerance` | `int` | 1 (conservative) to 10 (aggressive) |
+| `horizon` | `enum` | `SHORT_TERM` / `MEDIUM_TERM` / `LONG_TERM` |
+| `capitalAmount` | `float` | Investment capital in INR |
+
+**Response:** The created/updated `InvestorProfile` object.
+
+---
+
+### GET `/api/profile` (Auth Required)
+Get the current user's investor profile.
+
+**Response:**
+```json
+{
+  "id": "uuid",
+  "userId": "uuid",
+  "riskTolerance": 7,
+  "horizon": "SHORT_TERM",
+  "capitalAmount": 100000,
+  "createdAt": "2026-04-04T...",
+  "updatedAt": "2026-04-04T..."
+}
+```
+
+---
+
+## 15. Backtesting Engine
+
+### POST `/api/backtest` (Auth Required)
+Run a **7-day backtest** for specified NSE/BSE stocks. The engine:
+1. Scrapes tweets from **trusted financial channels** (trustScore ≥ 0.7)
+2. Runs NLP sentiment analysis on each tweet
+3. Matches tweets to requested assets via keyword detection
+4. Applies the user's strategy config to generate BUY/SELL signals
+5. Fetches **actual historical stock prices** from Yahoo Finance
+6. Simulates paper trades and calculates P&L
+
+**Request Body:**
+```json
+{
+  "assets": ["RELIANCE", "TCS"],
+  "lookbackDays": 7,
+  "capitalAmount": 100000
+}
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `assets` | `string[]` | NSE stock symbols to backtest |
+| `lookbackDays` | `int?` | Max 7 (Twitter API limit). Default: 7 |
+| `capitalAmount` | `float?` | INR. Default: from InvestorProfile or 100000 |
+| `strategyConfig` | `object?` | Optional override. Uses active strategy if omitted |
+
+**Response:**
+```json
+{
+  "strategyName": "Sentiment-Driven Backtest",
+  "period": { "from": "2026-03-28", "to": "2026-04-04" },
+  "assets": ["RELIANCE", "TCS"],
+  "capitalINR": 100000,
+  "totalTweetsAnalyzed": 342,
+  "trustedSourcesUsed": ["CNBCTV18Live", "livemint", "EconomicTimes"],
+  "signals": [
+    {
+      "date": "2026-03-29T10:15:00Z",
+      "asset": "RELIANCE",
+      "action": "BUY",
+      "sentimentScore": 0.72,
+      "trigger": "CNBCTV18Live: Reliance Q4 results beat estimates...",
+      "source": "CNBCTV18Live",
+      "trustScore": 0.9,
+      "priceAtSignal": 1343.90
+    }
+  ],
+  "performance": {
+    "projectedGainINR": 24650,
+    "projectedGainPct": 24.65,
+    "winRate": "68%",
+    "totalTrades": 12,
+    "profitableTrades": 8,
+    "bestTrade": { "asset": "TCS", "gainPct": 3.2 },
+    "worstTrade": { "asset": "RELIANCE", "gainPct": -1.1 }
+  },
+  "recommendation": "Based on your risk tolerance (7/10) and ₹1,00,000 capital...",
+  "priceDataProvider": "Yahoo Finance",
+  "tradeExecutor": "Mock (Paper Trading)"
+}
+```
+
+> **Architecture note:** Uses **port/adapter pattern** — `PriceDataPort` (Yahoo Finance now, Kite later) and `TradeExecutorPort` (Mock now, Kite live trading later). Swap adapters without changing any service code.
+
+---
+
+## 16. AI Strategy Generator
+
+### POST `/api/strategies/generate` (Auth Required)
+Generate **3 personalized investment strategies** (Conservative / Balanced / Aggressive) using GPT-4o-mini, based on the user's InvestorProfile and recent sentiment data.
+
+**Request Body:**
+```json
+{
+  "assets": ["RELIANCE", "TCS"]
+}
+```
+
+**Response:**
+```json
+[
+  {
+    "name": "Conservative Guardian",
+    "description": "Low-risk strategy — only acts on high-confidence news from verified sources.",
+    "riskLevel": "LOW",
+    "estimatedWinRate": "72%",
+    "rationale": "Focuses on verified news with strict thresholds.",
+    "config": {
+      "sentimentThreshold": 0.4,
+      "impactThreshold": 75,
+      "confidenceThreshold": 0.7,
+      "sentimentWeight": 0.4,
+      "impactWeight": 0.6,
+      "keywordsPositive": ["earnings beat", "record profit"],
+      "keywordsNegative": ["crash", "fraud"],
+      "categories": ["NEWS", "WHALE_ACTIVITY"]
+    }
+  },
+  { "name": "Balanced Opportunist", "riskLevel": "MEDIUM", "..." : "..." },
+  { "name": "Aggressive Momentum", "riskLevel": "HIGH", "..." : "..." }
+]
+```
+
+> Falls back to intelligent rule-based generation if OpenAI API key is not configured.
+
+---
+
+## 17. Channel Recommender
+
+### GET `/api/channels/recommended?assets=RELIANCE,TCS` (Auth Required)
+Returns **pre-verified trusted financial channels** relevant to the specified assets. Always includes BSEIndia and NSEIndia.
+
+**Response:**
+```json
+{
+  "assets": ["RELIANCE", "TCS"],
+  "recommended": [
+    { "id": "uuid", "handle": "CNBCTV18Live", "displayName": "CNBC-TV18", "trustScore": 0.9 },
+    { "id": "uuid", "handle": "livemint", "displayName": "Mint", "trustScore": 0.9 },
+    { "id": "uuid", "handle": "BSEIndia", "displayName": "BSE India", "trustScore": 0.95 },
+    { "id": "uuid", "handle": "NSEIndia", "displayName": "NSE India", "trustScore": 0.95 }
+  ],
+  "note": "These are pre-verified trusted financial news channels."
+}
+```
+
+---
+
+## 18. Agent Registry
+
+### GET `/api/agents` (No Auth Required)
+Returns all registered AI agents and their health status. Use this to discover what analysis engines are active.
+
+**Response:**
+```json
+{
+  "agents": [
+    {
+      "name": "NLP Sentiment Agent",
+      "type": "SENTIMENT",
+      "version": "1.0.0",
+      "healthy": true
+    }
+  ],
+  "total": 1,
+  "healthy": 1,
+  "broker": {
+    "provider": "Mock (Paper Trading)",
+    "isLive": false,
+    "note": "Swap to Kite/Alpaca by implementing BrokerPort"
+  }
+}
+```
+
+> **Architecture note:** To add a new agent (e.g., Multi-Agent, Trading Algo), implement the `AgentPort` interface and register it in `AgentsModule`. All endpoints (`/api/backtest`, `/api/strategies/generate`) automatically use the new agent — no other code changes needed.
+
+---
+
+## 19. Health Check
 
 ### GET `/api/health`
 **No auth required.**
