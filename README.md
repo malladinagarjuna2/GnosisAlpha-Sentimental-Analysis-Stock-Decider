@@ -37,7 +37,8 @@ No streaming firehose. No noise. Polling every 30–60 seconds, trusted sources 
 - 🤖 **AI strategy generator** — GPT-4o-mini with a rule-based fallback
 - 🧑‍💼 **Investor onboarding** — risk score, investment horizon, capital
 - 🧩 **Pluggable multi-agent architecture** — add a new AI agent in 4 steps
-- 🔎 **On-demand LLM deep analysis** — never runs automatically; only when you click a post
+- 🔎 **On-demand deep analysis** — a 3-agent LLM pipeline (Gemini + GPT-4o-mini) that never runs automatically; only when you click a post
+- 🛡️ **ArmorIQ trust layer** — per-agent intent tokens, policy gates, hallucination detection, and a cryptographic execution + reasoning audit on every deep analysis
 - ⚡ **Real-time updates** — Socket.IO for live posts, sentiment, and alerts
 
 ---
@@ -97,12 +98,15 @@ The system is organized into **five layers**:
 | **State/API**| Zustand · Axios · Socket.IO client                                |
 | **Forms**    | React Hook Form · Zod                                              |
 | **Charts**   | Recharts                                                          |
-| **AI/LLM**   | OpenAI GPT-4o-mini                                                 |
+| **AI gov.**  | ArmorIQ (`@armoriq/sdk`) — execution + reasoning verification     |
+| **AI/LLM**   | OpenAI GPT-4o-mini · Google Gemini                                                 |
 | **Data**     | Yahoo Finance (prices) · Twitter/Nitter (tweets)                  |
 
 ---
 
 ## 🧩 Multi-Agent Architecture
+
+> This is the **backtest/signal** agent system (the `AgentPort` orchestrator). It's separate from the 3-agent **deep-analysis** pipeline described in the [ArmorIQ section](#️-deep-analysis--armoriq-trust-layer) below — that one runs per-post on demand and is wrapped by ArmorIQ verification.
 
 Every analysis engine implements a single universal `AgentPort` interface:
 
@@ -163,6 +167,37 @@ POST /api/backtest
   "tradeExecutor": "Mock (Paper Trading)"
 }
 ```
+
+---
+
+## 🛡️ Deep Analysis + ArmorIQ Trust Layer
+
+Clicking a post triggers `POST /api/analysis/deep` — an on-demand, multi-agent explanation pipeline that **never runs automatically** (this keeps LLM costs down). Three specialized agents run in sequence:
+
+| Agent | Model | Produces |
+| ----- | ----- | -------- |
+| **1 · Sentiment**   | Gemini      | asset, relevance, tweet type, sentiment score, matched keywords, confidence |
+| **2 · Risk**        | GPT-4o-mini | sarcasm, irony, pump-and-dump, emotional manipulation, risk flags, risk level |
+| **3 · Explanation** | Gemini      | summary, reasoning, key signals, recommendation |
+
+A final code-only step derives the sentiment label, confidence score, and `pipelineStatus` (`full` / `partial` / `mock`). If any agent fails, it falls back to a safe default instead of breaking the response.
+
+**Wrapping all of this is ArmorIQ** (`@armoriq/sdk`) — a per-agent governance layer that makes each analysis _verifiable_, not just plausible. It attaches a `security` block to every response containing two independent proofs:
+
+- **Execution proof** — each agent runs under its own signed **intent token** (scoped policy + TTL). Plans are captured, validated, and finalized against the ArmorIQ proxy, so the response can prove the pipeline ran _as authorized_.
+- **Reasoning proof (`quickVerify`)** — a local consistency check producing a `reasoningScore` (0–1) that flags contradictions: bullish sentiment vs. HIGH risk, pump-and-dump alongside hype, sarcasm with a positive score, or **hallucination** (Agent 3 citing signals absent from the original post).
+
+The headline flag combines both: `verified = executionVerified && reasoningScore ≥ 0.7 && !hallucination`.
+
+**Policy gates** can hard-stop the pipeline — e.g. if Agent 2 flags `riskLevel = HIGH` **and** pump-and-dump, Agent 3's explanation is **blocked** and replaced with a "do not act on this signal" warning.
+
+**Built to fail safe:**
+
+- ArmorIQ is **optional** — with no `ARMORIQ_API_KEY`, the pipeline runs in **degraded mode** and the response says so honestly (`verified: false`, `degraded: true`) rather than pretending it was verified.
+- Network calls **fail open** — ArmorIQ availability never blocks an agent from running.
+- A **circuit breaker** trips after 3 consecutive failures and backs off for 60 seconds.
+
+Every response carries a full **audit trail** — per-agent token IDs, policy decisions, and outcomes — ready to render on a security dashboard.
 
 ---
 
@@ -227,8 +262,21 @@ SMTP_PASS=your-gmail-app-password
 # Optional — real Twitter fetching (has a Nitter fallback)
 TWITTER_BEARER_TOKEN=your_bearer_token
 
-# Optional — GPT-4o-mini strategy generation + deep analysis (rule-based fallback if unset)
-OPENAI_API_KEY=sk-your-openai-key
+# Optional — LLMs for strategy generation + deep analysis (fallbacks apply if unset)
+OPENAI_API_KEY=sk-your-openai-key          # GPT-4o-mini (strategies + Risk agent)
+GEMINI_API_KEY=your-gemini-key             # Gemini (Sentiment + Explanation agents)
+
+# Optional — ArmorIQ AI governance (execution + reasoning verification; degraded mode if unset)
+ARMORIQ_API_KEY=ak_live_your_key           # must start with ak_live_
+ARMORIQ_USER_ID=default-user
+ARMORIQ_AGENT_ID=sentiment-agent-v1
+ARMORIQ_PROXY_URL=https://customer-proxy.armoriq.ai
+
+# Optional — Zerodha Kite (live NSE/BSE trading; future / paper trading works without it)
+KITE_API_KEY=
+KITE_API_SECRET=
+KITE_ACCESS_TOKEN=
+KITE_USER_ID=
 ```
 
 **Frontend — `frontend/.env.local`**
@@ -270,7 +318,7 @@ All routes except `POST /auth/signup`, `POST /auth/login`, and `GET /assets` req
 | ------ | ----------------- | ----------------------- |
 | GET    | `/posts`          | Posts (filterable)      |
 | GET    | `/posts/:id`      | Single post + sentiment |
-| POST   | `/analysis/deep`  | On-demand LLM analysis  |
+| POST   | `/analysis/deep`  | 3-agent analysis + ArmorIQ `security` block |
 | GET    | `/alerts`         | User's alerts           |
 
 **Intelligence (the new stuff)**
